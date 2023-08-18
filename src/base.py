@@ -80,6 +80,7 @@ class Folder:
         }
 
         df = None
+
         if recurse:
             files = [
                 f for f in self.path.glob(
