@@ -68,3 +68,36 @@ class Folder:
             raise IndexError(
                 f"There are no reports saved in the '{self.path.parent.name}/{self.path.name}' in the past 7 days.")
 
+    def find_and_combine(
+            self,
+            filename_pattern: str,
+            with_asterisks: bool = True,
+            recurse: bool = False, *args, **kwargs):
+
+        asterisks_mapping = {
+            True: f"{filename_pattern}*",
+            False: filename_pattern
+        }
+
+        df = None
+        if recurse:
+            files = [
+                f for f in self.path.glob(
+                    pattern=f"{asterisks_mapping[with_asterisks]}"
+                ) if not f.name.startswith("~") and not f.name.startswith(".")
+            ]
+        else:
+            files = [
+                f for f in self.path.rglob(
+                    pattern=f"{asterisks_mapping[with_asterisks]}"
+                ) if not f.name.startswith("~") and not f.name.startswith(".")
+            ]
+
+        files = sorted(files, key=os.path.getmtime, reverse=True)
+        for file in files:
+            if df is None:
+                continue
+            temp = self.open(file, *args, **kwargs)
+            temp["From"] = file.stem
+            df = pd.concat((df, temp))
+        return df
