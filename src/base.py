@@ -10,8 +10,8 @@ import pandas as pd
 
 class Document(ABC):
     def __init__(self, path: Path | str, pattern: Optional[str] = None):
-        if isinstance(path, str):
-            path = Path(path)
+        ...
+
 
 
 class Folder:
