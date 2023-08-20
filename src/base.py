@@ -13,12 +13,6 @@ class Document(ABC):
         if isinstance(path, str):
             path = Path(path)
 
-        if path.is_file():
-            pass
-
-        if path.is_dir():
-            pass
-
 
 class Folder:
     def __init__(self, folder_path: Path | str):
