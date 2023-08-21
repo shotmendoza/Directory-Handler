@@ -13,7 +13,6 @@ class Document(ABC):
         ...
 
 
-
 class Folder:
     def __init__(self, folder_path: Path | str):
         if isinstance(folder_path, str):
@@ -22,7 +21,7 @@ class Folder:
 
         if not self.path.is_dir():
             raise ValueError(f"Expected a path to a folder / directory. Got {self.path}.")
-        
+
     @classmethod
     def open(cls, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
         if "sheet_name" not in kwargs.keys():
@@ -36,7 +35,27 @@ class Folder:
         else:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
-    def open_recent(self, filename_pattern: str, with_asterisks: bool = True, recurse: bool = False, *args, **kwargs):
+    @classmethod
+    def as_map(
+            cls,
+            file_path: str | Path,
+            key_column: str,
+            value_column: str, *args, **kwargs) -> dict[str, str]:
+        df = cls.open(file_path=file_path, *args, **kwargs)
+
+        if not all([column in df.columns for column in (key_column, value_column)]):
+            raise f"Expected key {key_column} and value {value_column}. Missing one or all from the Dataframe."
+
+        mapping = {
+            k: v for k, v in zip(df[key_column], df[value_column])
+        }
+        return mapping
+
+    def open_recent(
+            self,
+            filename_pattern: str,
+            with_asterisks: bool = True,
+            recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
         asterisks_mapping = {
             True: f"{filename_pattern}*",
             False: filename_pattern
@@ -46,7 +65,7 @@ class Folder:
             files = [
                 f for f in self.path.rglob(pattern=f"{asterisks_mapping[with_asterisks]}")
                 if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=10000))
-                   and not f.name.startswith("~")
+                and not f.name.startswith("~")
             ]
         else:
             files = [
@@ -74,7 +93,6 @@ class Folder:
         }
 
         df = None
-
         if recurse:
             files = [
                 f for f in self.path.glob(
