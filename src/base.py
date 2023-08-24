@@ -41,6 +41,16 @@ class Folder:
             file_path: str | Path,
             key_column: str,
             value_column: str, *args, **kwargs) -> dict[str, str]:
+        """
+        Function for creating a dictionary based on two DataFrame columns
+
+        :param file_path: str or Pathlib.Path to the DataFrame file
+        :param key_column: the DataFrame column to be used as the keys for the dict
+        :param value_column: the DataFrame column to be used as the values in the dict
+        :param args: arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
+        :param kwargs: keyword arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
+        :return: Dictionary of the two columns
+        """
         df = cls.open(file_path=file_path, *args, **kwargs)
 
         if not all([column in df.columns for column in (key_column, value_column)]):
