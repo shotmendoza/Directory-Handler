@@ -24,6 +24,16 @@ class Folder:
 
     @classmethod
     def open(cls, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
+        """
+        Opens a string or pathlib.Path object into a pandas.DataFrame object.
+        Currently, reads .xlsx, .csv, .json file extensions, and will raise a
+        KeyError for any other file types.
+
+        :param file_path: path to the file you want to open
+        :param args: see documentation for pd.DataFrame object
+        :param kwargs: see documentation for pd.DataFrame object
+        :return: pd.DataFrame object of the file
+        """
         if "sheet_name" not in kwargs.keys():
             kwargs["sheet_name"] = 0
         if file_path.suffix == ".xlsx":
