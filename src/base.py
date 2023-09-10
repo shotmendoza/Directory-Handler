@@ -76,6 +76,17 @@ class Folder:
             filename_pattern: str,
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
+        """
+        Finds the most recently modified file in the directory based on a filename pattern.
+        Other than this, please read the documentation for the self.open method for more details.
+
+        :param filename_pattern: the naming convention of the file, will look in the specified directory
+        :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg
+        :param recurse: recursively search through sub-folders for the files in the directory
+        :param args: arguments under DataFrame object
+        :param kwargs: named arguments for the DataFrame object
+        :return: a DataFrame object
+        """
         asterisks_mapping = {
             True: f"{filename_pattern}*",
             False: filename_pattern
