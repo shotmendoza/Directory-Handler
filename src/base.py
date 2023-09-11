@@ -117,6 +117,18 @@ class Folder:
             filename_pattern: str,
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs):
+        """
+        Uses a filename pattern to find all files that follow the naming convention
+        and converts the files into a single DataFrame object
+
+        :param filename_pattern: the naming convention of the files you are searching for
+        :param with_asterisks: defaults to True. Determines whether an asterisks are added at the end of the
+        filename pattern
+        :param recurse: defaults to False. Determines whether to search for subfolders
+        :param args: args used in pd.DataFrame objects
+        :param kwargs: keyword args used in pd.DataFrame objects
+        :return: a DataFrame object of all the files that share similar naming conventions in a folder
+        """
 
         asterisks_mapping = {
             True: f"{filename_pattern}*",
