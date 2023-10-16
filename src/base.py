@@ -71,9 +71,11 @@ class Folder:
         }
         return mapping
 
+
     def open_recent(
             self,
             filename_pattern: str,
+            days: int = 30,
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
@@ -81,6 +83,7 @@ class Folder:
         Other than this, please read the documentation for the self.open method for more details.
 
         :param filename_pattern: the naming convention of the file, will look in the specified directory
+        :param days: the number of days the function should look back
         :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg
         :param recurse: recursively search through sub-folders for the files in the directory
         :param args: arguments under DataFrame object
@@ -95,13 +98,13 @@ class Folder:
         if recurse:
             files = [
                 f for f in self.path.rglob(pattern=f"{asterisks_mapping[with_asterisks]}")
-                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=10000))
+                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=days))
                 and not f.name.startswith("~")
             ]
         else:
             files = [
                 f for f in self.path.glob(pattern=f"{asterisks_mapping[with_asterisks]}")
-                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=10000))
+                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=days))
                 and not f.name.startswith("~")
             ]
 
