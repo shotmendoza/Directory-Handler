@@ -1,5 +1,4 @@
 import os.path
-import re
 from abc import ABC
 from datetime import date, timedelta
 from pathlib import Path
@@ -71,7 +70,6 @@ class Folder:
         }
         return mapping
 
-
     def open_recent(
             self,
             filename_pattern: str,
@@ -80,7 +78,7 @@ class Folder:
             recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
         Finds the most recently modified file in the directory based on a filename pattern.
-        Other than this, please read the documentation for the self.open method for more details.
+        Other than this, please read the documentation for the self.open() method for more details.
 
         :param filename_pattern: the naming convention of the file, will look in the specified directory
         :param days: the number of days the function should look back
@@ -113,7 +111,7 @@ class Folder:
             return self.open(most_recent_file, *args, **kwargs)
         except IndexError:
             raise IndexError(
-                f"There are no reports saved in the '{self.path.parent.name}/{self.path.name}' in the past 7 days.")
+                f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
     def find_and_combine(
             self,
@@ -122,12 +120,13 @@ class Folder:
             recurse: bool = False, *args, **kwargs):
         """
         Uses a filename pattern to find all files that follow the naming convention
-        and converts the files into a single DataFrame object
+        and converts the files into a single DataFrame object6
 
         :param filename_pattern: the naming convention of the files you are searching for
         :param with_asterisks: defaults to True. Determines whether an asterisks are added at the end of the
         filename pattern
-        :param recurse: defaults to False. Determines whether to search for subfolders
+
+        :param recurse: defaults to False. Determines whether to search for sub-folders
         :param args: args used in pd.DataFrame objects
         :param kwargs: keyword args used in pd.DataFrame objects
         :return: a DataFrame object of all the files that share similar naming conventions in a folder
