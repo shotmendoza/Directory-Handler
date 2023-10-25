@@ -1,4 +1,6 @@
 import os.path
+import random
+import subprocess
 from abc import ABC
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,6 +12,26 @@ import pandas as pd
 class Document(ABC):
     def __init__(self, path: Path | str, pattern: Optional[str] = None):
         ...
+
+
+class Mp4:
+    def __init__(self, path: Path):
+        self.location = path
+
+    def play(self):
+        subprocess.run(["open", self.location])
+
+
+class FileList:
+    def __init__(self, files: list[Path]):
+        self.playlist = [Mp4(file) for file in files]
+        self.size = len(self.playlist)
+
+    def shuffle(self, times: int = 1):
+        for _ in range(times):
+            shuffled_seed = random.randint(a=0, b=self.size)
+            self.playlist[shuffled_seed].play()
+
 
 
 class Folder:
@@ -159,3 +181,22 @@ class Folder:
             temp["From"] = file.stem
             df = pd.concat((df, temp))
         return df
+
+    def index_files(
+            self,
+            file_ext: str,
+            recurse: bool = False,
+    ):
+        if recurse:
+            files = [
+                f for f in self.path.rglob(
+                    pattern=f"*{file_ext}"
+                ) if not f.name.startswith("~") and not f.name.startswith(".")
+            ]
+        else:
+            files = [
+                f for f in self.path.glob(
+                    pattern=f"*{file_ext}"
+                ) if not f.name.startswith("~") and not f.name.startswith(".")
+            ]
+        return files
