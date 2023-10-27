@@ -1,17 +1,8 @@
 import os.path
-import random
-import subprocess
-from abc import ABC
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
-
-
-class Document(ABC):
-    def __init__(self, path: Path | str, pattern: Optional[str] = None):
-        ...
 
 
 class Folder:
