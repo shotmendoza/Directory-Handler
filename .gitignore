@@ -1,9 +1,0 @@
-/directory_handler/src/video.py
-!/venv/
-/pyproject.toml
-/dist/directory_handler-0.1.0-py3-none-any.whl
-/dist/directory_handler-0.1.0.tar.gz
-/.idea/.name
-/dist/dirlin-0.1.0.tar.gz
-/dist/dirlin-0.1.0-py3-none-any.whl
-!/.gitignore
