@@ -1,15 +1,29 @@
 import os.path
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
 
 class Folder:
     def __init__(self, folder_path: Path | str):
-        """
+        """Object used for processing files through local directories.
+        Good for partially built out automated processes that can be done on a single computer.
 
-        :param folder_path:
+        Functions:
+            - open() : opens a path file and converts it into a dataframe
+            - as_map(): creates a dictionary based on two columns from dataframe
+            - open_recent(): opens the most recent file as a dataframe based on naming conventions
+            - find_and_combine(): finds all files that follow naming conventions and creates a single dataframe
+            - index_files(): creates a list of paths based on file_ext or file suffixes (.csv, .xlsx)
+
+        ...
+
+            Attributes:
+                - path: the directory path the folder is set to
+
+        :param folder_path: Path to the Folder
         """
         if isinstance(folder_path, str):
             folder_path = Path(folder_path)
@@ -40,35 +54,6 @@ class Folder:
             return pd.read_json(file_path, *args, **kwargs)
         else:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
-
-    def as_map(
-            self,
-            file_path: str | Path,
-            key_column: str,
-            value_column: str, *args, **kwargs) -> dict[str, str]:
-        """
-        Function for creating a dictionary based on two DataFrame columns
-
-        :param file_path: str or Path to DataFrame file. If str, just give it filename. If Path, give it the full-path.
-        :param key_column: the DataFrame column to be used as the keys for the dict
-        :param value_column: the DataFrame column to be used as the values in the dict
-        :param args: arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
-        :param kwargs: keyword arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
-        :return: Dictionary of the two columns
-        """
-        try:
-            if isinstance(file_path, str):
-                file_path = self.path / file_path
-        except Exception as e:
-            raise e
-        df = self.open(file_path=file_path, *args, **kwargs)
-
-        if not all([column in df.columns for column in (key_column, value_column)]):
-            raise f"Expected key {key_column} and value {value_column}. Missing one or all from the Dataframe."
-        mapping = {
-            k: v for k, v in zip(df[key_column], df[value_column])
-        }
-        return mapping
 
     def open_recent(
             self,
@@ -112,6 +97,35 @@ class Folder:
         except IndexError:
             raise IndexError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
+
+    def as_map(
+            self,
+            file_path: str | Path,
+            key_column: str,
+            value_column: str, *args, **kwargs) -> dict[str, str]:
+        """
+        Function for creating a dictionary based on two DataFrame columns
+
+        :param file_path: str or Path to DataFrame file. If str, just give it filename. If Path, give it the full-path.
+        :param key_column: the DataFrame column to be used as the keys for the dict
+        :param value_column: the DataFrame column to be used as the values in the dict
+        :param args: arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
+        :param kwargs: keyword arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
+        :return: Dictionary of the two columns
+        """
+        try:
+            if isinstance(file_path, str):
+                file_path = self.path / file_path
+        except Exception as e:
+            raise e
+        df = self.open(file_path=file_path, *args, **kwargs)
+
+        if not all([column in df.columns for column in (key_column, value_column)]):
+            raise f"Expected key {key_column} and value {value_column}. Missing one or all from the Dataframe."
+        mapping = {
+            k: v for k, v in zip(df[key_column], df[value_column])
+        }
+        return mapping
 
     def find_and_combine(
             self,
@@ -163,24 +177,26 @@ class Folder:
     def index_files(
             self,
             file_ext: str,
+            filename_convention: Optional[str] = "*",
             recurse: bool = False,
     ) -> list[Path]:
         """Creates a list of Path objects based on the file extension
 
         :param file_ext: The suffix of the file (.mp4, .xlsx, .csv)
+        :param filename_convention: The naming convention of the file. Defaults to every file with extension
         :param recurse: Defaults to False. If True, will recurse through subdirectories
         :return: list of Pathlib.Path objects representing a file
         """
         if recurse:
             files = [
                 f for f in self.path.rglob(
-                    pattern=f"*{file_ext}"
+                    pattern=f"{filename_convention}{file_ext}"
                 ) if not f.name.startswith("~") and not f.name.startswith(".")
             ]
         else:
             files = [
                 f for f in self.path.glob(
-                    pattern=f"*{file_ext}"
+                    pattern=f"{filename_convention}{file_ext}"
                 ) if not f.name.startswith("~") and not f.name.startswith(".")
             ]
         return files
