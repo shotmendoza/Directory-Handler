@@ -44,9 +44,9 @@ class Folder:
         :param kwargs: see documentation for pd.DataFrame object
         :return: pd.DataFrame object of the file
         """
-        if "sheet_name" not in kwargs.keys():
-            kwargs["sheet_name"] = 0
         if file_path.suffix == ".xlsx":
+            if "sheet_name" not in kwargs.keys():
+                kwargs["sheet_name"] = 0
             return pd.read_excel(file_path, *args, **kwargs)
         elif file_path.suffix == ".csv":
             return pd.read_csv(file_path, *args, **kwargs)
