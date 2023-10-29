@@ -7,6 +7,10 @@ import pandas as pd
 
 class Folder:
     def __init__(self, folder_path: Path | str):
+        """
+
+        :param folder_path:
+        """
         if isinstance(folder_path, str):
             folder_path = Path(folder_path)
         self.path = folder_path
@@ -37,27 +41,30 @@ class Folder:
         else:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
-    @classmethod
     def as_map(
-            cls,
+            self,
             file_path: str | Path,
             key_column: str,
             value_column: str, *args, **kwargs) -> dict[str, str]:
         """
         Function for creating a dictionary based on two DataFrame columns
 
-        :param file_path: str or Pathlib.Path to the DataFrame file
+        :param file_path: str or Path to DataFrame file. If str, just give it filename. If Path, give it the full-path.
         :param key_column: the DataFrame column to be used as the keys for the dict
         :param value_column: the DataFrame column to be used as the values in the dict
         :param args: arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
         :param kwargs: keyword arguments in the pd.DataFrame.from_csv() or pd.DataFrame.from_excel() functions
         :return: Dictionary of the two columns
         """
-        df = cls.open(file_path=file_path, *args, **kwargs)
+        try:
+            if isinstance(file_path, str):
+                file_path = self.path / file_path
+        except Exception as e:
+            raise e
+        df = self.open(file_path=file_path, *args, **kwargs)
 
         if not all([column in df.columns for column in (key_column, value_column)]):
             raise f"Expected key {key_column} and value {value_column}. Missing one or all from the Dataframe."
-
         mapping = {
             k: v for k, v in zip(df[key_column], df[value_column])
         }
@@ -158,7 +165,7 @@ class Folder:
             file_ext: str,
             recurse: bool = False,
     ) -> list[Path]:
-        """
+        """Creates a list of Path objects based on the file extension
 
         :param file_ext: The suffix of the file (.mp4, .xlsx, .csv)
         :param recurse: Defaults to False. If True, will recurse through subdirectories
