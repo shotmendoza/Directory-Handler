@@ -110,7 +110,7 @@ class Folder:
             self,
             filename_pattern: str,
             with_asterisks: bool = True,
-            recurse: bool = False, *args, **kwargs):
+            recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
         Uses a filename pattern to find all files that follow the naming convention
         and converts the files into a single DataFrame object6
@@ -157,7 +157,13 @@ class Folder:
             self,
             file_ext: str,
             recurse: bool = False,
-    ):
+    ) -> list[Path]:
+        """
+
+        :param file_ext: The suffix of the file (.mp4, .xlsx, .csv)
+        :param recurse: Defaults to False. If True, will recurse through subdirectories
+        :return: list of Pathlib.Path objects representing a file
+        """
         if recurse:
             files = [
                 f for f in self.path.rglob(
