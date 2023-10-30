@@ -181,7 +181,7 @@ class Folder:
         :param recurse: whether to recurse through sub-folders
         :param args: arguments for dataframe function
         :param kwargs: keyword arguments for dataframe function
-        :return:
+        :return: returns a Document object
         """
         most_recent_file = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
         return self.open_as_document(most_recent_file, *args, **kwargs)
