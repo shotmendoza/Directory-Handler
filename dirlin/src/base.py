@@ -283,8 +283,7 @@ class Folder:
             ]
         else:
             files = [
-                f for f in self.path.glob(
-                    pattern=f"{filename_convention}{file_ext}"
-                ) if not f.name.startswith("~") and not f.name.startswith(".")
+                f for f in self.path.glob(pattern=f"{filename_convention}{file_ext}")
+                if not f.name.startswith("~") and not f.name.startswith(".")
             ]
         return files
