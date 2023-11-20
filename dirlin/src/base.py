@@ -47,6 +47,24 @@ class Document:
             raise e
         return self.filepath
 
+    def check_max(self, column: str):
+        """
+        Checks the max for the column
+
+        :param column: Column name that you want to check for max values
+        :return: The max value in the column
+        """
+        return self.dataframe[column].max()
+
+    def check_min(self, column: str):
+        """
+        Checks the min value for the column
+
+        :param column: column that you want to check for min values
+        :return: the minimum value of the column
+        """
+        return self.dataframe[column].min()
+
 
 class Folder:
     def __init__(self, folder_path: Path | str):
