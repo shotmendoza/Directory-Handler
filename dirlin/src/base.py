@@ -134,8 +134,8 @@ class Folder:
             raise IndexError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
-    @classmethod
-    def open(cls, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
+
+    def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
         Currently, reads .xlsx, .csv, .json file extensions, and will raise a
@@ -146,6 +146,12 @@ class Folder:
         :param kwargs: see documentation for pd.DataFrame object
         :return: pd.DataFrame object of the file
         """
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+
+        if not file_path.exists():
+            file_path = self.path / file_path
+
         if file_path.suffix == ".xlsx":
             if "sheet_name" not in kwargs.keys():
                 kwargs["sheet_name"] = 0
@@ -157,9 +163,8 @@ class Folder:
         else:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
-    @classmethod
-    def open_as_document(cls, file_path: str | Path, *args, **kwargs) -> Document:
-        df = cls.open(file_path, *args, **kwargs)
+    def open_as_document(self, file_path: str | Path, *args, **kwargs) -> Document:
+        df = self.open(file_path, *args, **kwargs)
         return Document(df=df, path=file_path)
 
     def open_recent(
