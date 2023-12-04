@@ -92,6 +92,12 @@ class Folder:
         if not self.path.is_dir():
             raise ValueError(f"Expected a path to a folder / directory. Got {self.path}.")
 
+    def __repr__(self):
+        return f"{self.path}"
+
+    def __str__(self):
+        return f"{self.path}"
+
     def _find_recent_files(
             self,
             filename_pattern: str,
@@ -134,7 +140,6 @@ class Folder:
             raise IndexError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
-
     def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
@@ -152,7 +157,8 @@ class Folder:
         if not file_path.exists():
             file_path = self.path / file_path
 
-        if file_path.suffix == ".xlsx":
+        _excel_types = (".xlsx", ".xls")
+        if file_path.suffix in _excel_types:
             if "sheet_name" not in kwargs.keys():
                 kwargs["sheet_name"] = 0
             return pd.read_excel(file_path, *args, **kwargs)
@@ -278,9 +284,10 @@ class Folder:
 
         files = sorted(files, key=os.path.getmtime, reverse=True)
         for file in files:
-            if df is None:
-                continue
             temp = self.open(file, *args, **kwargs)
+            if df is None:
+                df = temp
+                continue
             temp["From"] = file.stem
             df = pd.concat((df, temp))
         return df
