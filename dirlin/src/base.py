@@ -285,10 +285,10 @@ class Folder:
         files = sorted(files, key=os.path.getmtime, reverse=True)
         for file in files:
             temp = self.open(file, *args, **kwargs)
+            temp["From"] = file.stem
             if df is None:
                 df = temp
                 continue
-            temp["From"] = file.stem
             df = pd.concat((df, temp))
         return df
 
