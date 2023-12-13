@@ -1,4 +1,4 @@
 pandas=2.1.1
 poetry
 openpyxl
-xlrd=22.0.1
+xlrd=2.0.1

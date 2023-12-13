@@ -143,7 +143,7 @@ class Folder:
     def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
-        Currently, reads .xlsx, .csv, .json file extensions, and will raise a
+        Currently, reads .xlsx, .xls, .csv, .json file extensions, and will raise a
         KeyError for any other file types.
 
         :param file_path: path to the file you want to open
@@ -175,7 +175,7 @@ class Folder:
 
     def open_recent(
             self,
-            filename_pattern: str,
+            filename_pattern: str = "",
             days: int = 30,
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
@@ -196,7 +196,7 @@ class Folder:
 
     def open_recent_as_document(
             self,
-            filename_pattern: str,
+            filename_pattern: str = "",
             days: int = 30,
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> Document:
@@ -246,7 +246,7 @@ class Folder:
 
     def find_and_combine(
             self,
-            filename_pattern: str,
+            filename_pattern: str = "",
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
