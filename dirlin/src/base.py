@@ -278,6 +278,8 @@ class Folder:
             True: f"{filename_pattern}*",
             False: filename_pattern
         }
+        if not with_asterisks and filename_pattern == "":
+            raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
         df = None
         if recurse:
@@ -295,6 +297,11 @@ class Folder:
 
         files = sorted(files, key=os.path.getmtime, reverse=True)
         for file in files:
+            if file.is_dir():
+                """
+                This is used for when the recurse is True so that it doesn't raise an error
+                """
+                continue
             temp = self.open(file, *args, **kwargs)
             temp["From"] = file.stem
             if df is None:

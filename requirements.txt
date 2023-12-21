@@ -2,3 +2,4 @@ pandas=2.1.1
 poetry
 openpyxl
 xlrd=2.0.1
+pyxlsb=1.0.10
