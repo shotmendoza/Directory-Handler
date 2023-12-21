@@ -73,19 +73,25 @@ class Folder:
         """Object used for processing files through local directories.
         Good for partially built out automated processes that can be done on a single computer.
 
-        Functions:
+        Dataframe Functions:
             - open() : opens a path file and converts it into a dataframe
-            - as_map(): creates a dictionary based on two columns from dataframe
             - open_recent(): opens the most recent file as a dataframe based on naming conventions
             - find_and_combine(): finds all files that follow naming conventions and creates a single dataframe
-            - index_files(): creates a list of paths based on file_ext or file suffixes (.csv, .xlsx)
+            - as_map(): creates a dictionary based on two columns from dataframe
+            - index_files(): creates a list of paths based on file_ext or file suffixes (.csv, .xlsx, etc.)
+
+        ...
+
+        Document Functions:
+            - open_as_document(): opens a path file and converts it into a document object
+            - open_recent_as_document(): opens the most recent Path file and converts it into a document object
 
         ...
 
             Attributes:
                 - path: the directory path the folder is set to
 
-        :param folder_path: Path to the Folder
+        :param folder_path: Path to the Folder. This is the directory the functions will use to search files in
         """
         if isinstance(folder_path, str):
             folder_path = Path(folder_path)
@@ -110,11 +116,11 @@ class Folder:
         Base function for finding the most recent file.
         Used in open_recent() and open_recent_as_document()
 
-        :param filename_pattern:
-        :param days:
-        :param with_asterisks:
-        :param recurse:
-        :return:
+        :param filename_pattern: the naming convention of the file, will look in the specified directory
+        :param days: looks back past x number of days. If looking in 12/31, then days=5 would look back to 12/26 files
+        :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg
+        :param recurse: whether to recurse through sub-folders
+        :return: Path object that meets the parameters
         """
 
         asterisks_mapping = {
@@ -159,7 +165,7 @@ class Folder:
         if not file_path.exists():
             file_path = self.path / file_path
 
-        _excel_types = (".xlsx", ".xls")
+        _excel_types = (".xlsx", ".xls", ",xlsb")
         if file_path.suffix in _excel_types:
             if "sheet_name" not in kwargs.keys():
                 kwargs["sheet_name"] = 0
