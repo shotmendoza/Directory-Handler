@@ -2,6 +2,8 @@ import os.path
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+from urllib.error import HTTPError
 
 import pandas as pd
 
@@ -162,10 +164,19 @@ class Folder:
             if "sheet_name" not in kwargs.keys():
                 kwargs["sheet_name"] = 0
             return pd.read_excel(file_path, *args, **kwargs)
+
         elif file_path.suffix == ".csv":
             return pd.read_csv(file_path, *args, **kwargs)
+
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)
+
+        try:
+            url = urlparse(str(file_path))
+            if url.netloc == "docs.google.com" and "format=csv" in url.query.split("&"):
+                return pd.read_csv(file_path, *args, **kwargs)
+        except HTTPError as e:
+            raise e
         else:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
