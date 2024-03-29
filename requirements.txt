@@ -1,5 +1,7 @@
-pandas=2.1.1
+pathlib
 poetry
 openpyxl
 xlrd=2.0.1
 pyxlsb=1.0.10
+pandas~=2.1.1
+setuptools~=68.0.0

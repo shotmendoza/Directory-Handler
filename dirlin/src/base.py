@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from urllib.error import HTTPError
 
 import pandas as pd
+import pandas.errors
 
 
 class Document:
@@ -172,11 +173,13 @@ class Folder:
             return pd.read_excel(file_path, *args, **kwargs)
 
         elif file_path.suffix == ".csv":
-            return pd.read_csv(file_path, *args, **kwargs)
-
+            try:
+                return pd.read_csv(file_path, *args, **kwargs)
+            except pandas.errors.ParserError:
+                print("Could not parse in C, attempting to reparse in Python...")
+                return pd.read_csv(file_path, engine='python', on_bad_lines='warn', *args, **kwargs)
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)
-
         try:
             url = urlparse(str(file_path))
             if url.netloc == "docs.google.com" and "format=csv" in url.query.split("&"):
