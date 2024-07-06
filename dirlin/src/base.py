@@ -141,7 +141,6 @@ class Folder:
                 if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=days))
                 and not f.name.startswith("~")
             ]
-
         try:
             most_recent_file = Path(sorted(files, key=os.path.getmtime, reverse=True)[0])
             return most_recent_file

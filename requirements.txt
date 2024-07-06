@@ -3,5 +3,6 @@ poetry
 openpyxl
 xlrd=2.0.1
 pyxlsb=1.0.10
-pandas~=2.1.1
+numpy=2.0.0
+pandas=2.2.2
 setuptools~=68.0.0

@@ -24,7 +24,6 @@ This will make it easier to pull files from your local directory to work on diff
 ```python
 # object.py
 from dirlin import Path, Folder  # 1 - import path and folder objects
-
 class LocalHelper:  # 2 - defining the Helper Object
     _base_path = Path("path to directory")
     
