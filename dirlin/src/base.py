@@ -165,13 +165,16 @@ class Folder:
         if not file_path.exists():
             file_path = self.path / file_path
 
+        # Valid File Types
         _excel_types = (".xlsx", ".xls", ",xlsb")
+        _text_types = (".txt", ".csv")
+
         if file_path.suffix in _excel_types:
             if "sheet_name" not in kwargs.keys():
                 kwargs["sheet_name"] = 0
             return pd.read_excel(file_path, *args, **kwargs)
 
-        elif file_path.suffix == ".csv":
+        elif file_path.suffix in _text_types:
             try:
                 return pd.read_csv(file_path, *args, **kwargs)
             except pandas.errors.ParserError:
@@ -193,7 +196,7 @@ class Folder:
         return Document(df=df, path=file_path)
 
     def open_recent(
-            self,
+            self,  
             filename_pattern: str = "",
             days: int = 30,
             with_asterisks: bool = True,
