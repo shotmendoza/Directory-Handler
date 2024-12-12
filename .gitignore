@@ -1,3 +1,4 @@
 /dist/dirlin-0.1.10.tar.gz
 /dist/dirlin-0.1.10-py3-none-any.whl
 /pyproject.toml
+!/test/test_pipeline.py

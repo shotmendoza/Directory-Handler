@@ -8,6 +8,8 @@ from urllib.error import HTTPError
 import pandas as pd
 import pandas.errors
 
+import chardet
+
 
 class Document:
     def __init__(self, df: pd.DataFrame, path: Path):
@@ -180,6 +182,13 @@ class Folder:
             except pandas.errors.ParserError:
                 print("Could not parse in C, attempting to reparse in Python...")
                 return pd.read_csv(file_path, engine='python', on_bad_lines='warn', *args, **kwargs)
+            except UnicodeDecodeError as uni_error:
+                print(f"{uni_error}")
+                print(f"reattempting to parse with chardet...")
+                with open(file_path, "rb") as f:
+                    file_path_encoding = chardet.detect(f.read())
+                    return pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
+
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)
         try:
