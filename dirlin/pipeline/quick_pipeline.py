@@ -2,7 +2,7 @@
 import pandas as pd
 
 from dirlin import Folder
-from dirlin.pipeline.report import TypeReport
+from dirlin.pipeline.report import ReportType
 
 
 class Pipeline:
@@ -10,6 +10,9 @@ class Pipeline:
             self,
             folder: Folder | str
     ):
+        """an object that allows for quick ETL and EDA process setups
+
+        """
         # Should add more high level checks to these
         self._folder = folder
         if isinstance(folder, str):
@@ -23,7 +26,7 @@ class Pipeline:
         value gets updated when `get_worksheet()` parameter `keep_df_context` is set to True
         """
 
-        self._report: TypeReport | None = None
+        self._report: ReportType | None = None
         """keeps the context of the last Report that went through the pipeline
         
         value gets updated when `get_worksheet()` parameter `keep_report_context` is set to True
@@ -36,7 +39,7 @@ class Pipeline:
             self,
             worksheet_name: str,
             *,
-            report: TypeReport | None = None,
+            report: ReportType | None = None,
             keep_report_context: bool = True,
             keep_df_context: bool = True
     ) -> pd.DataFrame:
@@ -74,9 +77,3 @@ class Pipeline:
             self._df = df
 
         return df
-
-
-
-
-
-
