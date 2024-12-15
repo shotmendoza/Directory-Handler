@@ -2,13 +2,15 @@
 import pandas as pd
 
 from dirlin import Folder
-from dirlin.pipeline.report import ReportType
+from dirlin.pipeline.types import ValidationType, ReportType
 
 
 class Pipeline:
     def __init__(
             self,
-            folder: Folder | str
+            folder: Folder | str,
+            *,
+            report: ReportType | None = None,
     ):
         """an object that allows for quick ETL and EDA process setups
 
@@ -26,7 +28,7 @@ class Pipeline:
         value gets updated when `get_worksheet()` parameter `keep_df_context` is set to True
         """
 
-        self._report: ReportType | None = None
+        self._report: ReportType | None = report
         """keeps the context of the last Report that went through the pipeline
         
         value gets updated when `get_worksheet()` parameter `keep_report_context` is set to True
@@ -37,8 +39,7 @@ class Pipeline:
 
     def get_worksheet(
             self,
-            worksheet_name: str,
-            *,
+            worksheet_name: str | None = None,
             report: ReportType | None = None,
             keep_report_context: bool = True,
             keep_df_context: bool = True
@@ -61,19 +62,53 @@ class Pipeline:
 
             :param keep_df_context: (bool) set to True to save the `df` argument in the object
         """
-        # Probably needs wrapping in the future
-        df = self._folder.open_recent(worksheet_name)
-        if self._df:
-            df = self._df.copy()
+        # Probably needs wrapping in the future or needs to be removed
+        if worksheet_name is not None:
+            df = self._folder.open_recent(worksheet_name)
+        else:  # worksheet_name is None
+            if self._report is not None:
+                df = self._folder.open_recent(self._report.name_convention)
+            elif self._df is not None:
+                df = self._df.copy()
+            else:
+                raise ValueError("Need a worksheet_name if report not given on Pipeline init.")
 
         # Handling if report argument was given
-        if report:
-            df = report.format(df)
+        if report is not None:  # report arg is given
             if keep_report_context:
                 self._report = report
+        else:  # report is arg not given
+            if self._report is not None:  # previous context was kept
+                report = self._report
+            # else:  # self._report is also None
+            #     raise ValueError("Need a report name if report not given on Pipeline init.")
+
+        if report is not None:
+            df = report.format(df)
 
         # Handling the context if keep_df_context is set
         if keep_df_context:
             self._df = df
-
         return df
+
+    def run_validation(
+            self,
+            validation: ValidationType,
+    ):
+        try:
+            df = self._df.copy()
+        except AttributeError:
+            if self._report is None:
+                # Temporary until we make Pipelines on a Report level if we end up going that way
+                raise AttributeError(
+                    f"Will need to run Pipeline.get_worksheet() or "
+                    f"use a Report as an argument in Pipeline init."
+                )
+            # Rerunning with report context
+            df = self.get_worksheet(
+                self._report.name_convention,
+                report=self._report,
+                keep_df_context=False,
+                keep_report_context=True
+            )
+        validation.run(df)

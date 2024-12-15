@@ -1,6 +1,3 @@
-from typing import TypeVar
-
-import numpy as np
 import pandas as pd
 
 
@@ -103,7 +100,7 @@ class Report:
             field.fillna(0).astype(str)
             .str.lower()
             .str.replace("nan", "0")
-            .str.strip("$","")
+            .str.strip("$", "")
             .str.strip("")
             .str.replace(",", "")
             .str.replace("none", "0")
@@ -111,8 +108,3 @@ class Report:
         )
         field = pd.Series(float(str(c).strip('%')) / 100 for c in field if '%' in c)
         return field
-
-
-ReportType = TypeVar('ReportType', bound=Report)
-"""Object type Report
-"""
