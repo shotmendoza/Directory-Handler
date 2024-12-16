@@ -182,7 +182,13 @@ class Validation:
             df: pd.DataFrame,
             field_mapping: dict[str, str] | None = None
     ) -> pd.DataFrame:
+        """function that handles running the Dataframe and the various checks
+
+        Still in the very early stages, but will likely expand to handle different errors and checks
+
+        """
         if field_mapping is not None:
+            # renaming the report based on the checks you would like to run
             df = df.rename(columns=field_mapping)
 
         for check in self._checklist:

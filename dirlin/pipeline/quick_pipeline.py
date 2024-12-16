@@ -40,6 +40,7 @@ class Pipeline:
     def get_worksheet(
             self,
             worksheet_name: str | None = None,
+            df: pd.DataFrame | None = None,
             report: ReportType | None = None,
             keep_report_context: bool = True,
             keep_df_context: bool = True
@@ -56,22 +57,25 @@ class Pipeline:
         Parameters:
             :param worksheet_name: naming convention of the worksheet you want to pull into the pipeline
 
+            :param df: an optional dataframe if you want to give the pipeline a DF without using keywords
+
             :param report: (TypeReport) has the report information and metadata for formatting
 
             :param keep_report_context: (bool) set to True to save the `report` argument in the object
 
             :param keep_df_context: (bool) set to True to save the `df` argument in the object
         """
-        # Probably needs wrapping in the future or needs to be removed
-        if worksheet_name is not None:
-            df = self._folder.open_recent(worksheet_name)
-        else:  # worksheet_name is None
-            if self._report is not None:
+        if worksheet_name is None:
+            if df is not None:
+                df = df.copy()
+            elif self._report is not None:
                 df = self._folder.open_recent(self._report.name_convention)
             elif self._df is not None:
                 df = self._df.copy()
             else:
                 raise ValueError("Need a worksheet_name if report not given on Pipeline init.")
+        else:  # worksheet_name is given
+            df = self._folder.open_recent(worksheet_name)
 
         # Handling if report argument was given
         if report is not None:  # report arg is given
@@ -80,8 +84,6 @@ class Pipeline:
         else:  # report is arg not given
             if self._report is not None:  # previous context was kept
                 report = self._report
-            # else:  # self._report is also None
-            #     raise ValueError("Need a report name if report not given on Pipeline init.")
 
         if report is not None:
             df = report.format(df)
@@ -99,7 +101,6 @@ class Pipeline:
             df = self._df.copy()
         except AttributeError:
             if self._report is None:
-                # Temporary until we make Pipelines on a Report level if we end up going that way
                 raise AttributeError(
                     f"Will need to run Pipeline.get_worksheet() or "
                     f"use a Report as an argument in Pipeline init."
