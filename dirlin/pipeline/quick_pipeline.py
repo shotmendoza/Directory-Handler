@@ -11,6 +11,7 @@ class Pipeline:
             folder: Folder | str,
             *,
             report: ReportType | None = None,
+            validation: ValidationType | None = None,
     ):
         """an object that allows for quick ETL and EDA process setups
 
@@ -32,6 +33,11 @@ class Pipeline:
         """keeps the context of the last Report that went through the pipeline
         
         value gets updated when `get_worksheet()` parameter `keep_report_context` is set to True
+        """
+
+        self._validation: ValidationType | None = validation
+        """keeps context of the last Validation that went through the pipeline
+        
         """
 
     def __repr__(self):
@@ -68,6 +74,8 @@ class Pipeline:
         if worksheet_name is None:
             if df is not None:
                 df = df.copy()
+            elif report is not None:
+                df = self._folder.open_recent(report.name_convention)
             elif self._report is not None:
                 df = self._folder.open_recent(self._report.name_convention)
             elif self._df is not None:
@@ -112,4 +120,4 @@ class Pipeline:
                 keep_df_context=False,
                 keep_report_context=True
             )
-        validation.run(df)
+        return validation.run(df)

@@ -11,7 +11,7 @@ class Report:
             column_type_ints: list[str] | None = None,
             column_type_dates: list[str] | None = None,
             column_type_cash: list[str] | None = None,
-            key_cash_column: list[str] | None = None,
+            key_cash_column: str | None = None,
     ):
         # Naming convention for the Report you want to pull
         self.name_convention = name_convention
@@ -100,7 +100,7 @@ class Report:
             field.fillna(0).astype(str)
             .str.lower()
             .str.replace("nan", "0")
-            .str.strip("$", "")
+            .str.strip("$")
             .str.strip("")
             .str.replace(",", "")
             .str.replace("none", "0")
