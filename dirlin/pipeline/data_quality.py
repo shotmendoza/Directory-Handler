@@ -1,13 +1,15 @@
 """Still a work in progress to get this portion set up"""
 import inspect
-
 import pandas as pd
 from typing import Callable, Any
 
 
 class Check:
     def __init__(
-            self, check_function: Callable[..., ...],
+            self,
+            check_function: Callable[..., ...],
+            *,
+            shared_params: str | list[str] | None = None
     ):
         self._check_function = check_function
         self._exempt_keywords = ["option"]
@@ -35,6 +37,20 @@ class Check:
         self._exempt_keywords_used: list[str] | None = None
         self._expected_return: type | None = None
         self._class_sig: str | None = None
+
+        # Adding the Shared Params
+        self.shared_param_keyword: list[str] = list()
+        """Keeps a list of the first keyword used in the parameter. Similar to `option` in `option_variance_cap`"""
+        self.shared_param_base: list[str] = list()
+        """Keeps a list of the base word used in the parameter. Similar to `variance_cap` in `option_variance_cap`"""
+        self.given_shared_params: list[str] = list()
+        """Keeps the actual shared params in question"""
+        self._shared_param_base_map = dict()
+        """Shared Parameter Name: Parameter Base, key-value pairs"""
+
+        # Handles and updates the shared params
+        if shared_params is not None:
+            self.add_shared_param_(shared_params)
 
         # name of the function
         self.name: str = self._check_function.__name__
@@ -74,12 +90,18 @@ class Check:
             del requested_func_param['return']
 
         # Checking the naming convention when available headers are given
+        print()
         if fields_available is not None:
             missing_fields = []
             for field in requested_func_param:
+                try:
+                    _split_field = field.split('_', maxsplit=2)[1]  # for use for shared fields
+                except IndexError:
+                    _split_field = ""
                 if field not in fields_available:
-                    if field not in exempt_fields:
-                        missing_fields.append(field)
+                    if _split_field not in self.shared_param_base:  # Checking to see if it's a shared param
+                        if field not in exempt_fields:
+                            missing_fields.append(field)
                 if missing_fields:
                     _missing_label = ", ".join(missing_fields)
                     raise KeyError(f"Missing fields {_missing_label} from available fields.")
@@ -89,35 +111,78 @@ class Check:
             self._required_params = requested_func_param
         return requested_func_param
 
-    def _handle_non_series_validation(self, args_map: dict[str, Any]):
+    def _handle_shared_params(self, shared_params: str | list[str]) -> None:
+        if isinstance(shared_params, str):
+            kw, base = shared_params.split('_', maxsplit=2)
+            self.shared_param_keyword.append(list(kw))
+            self.shared_param_base.append(list(base))
+            self.given_shared_params.append(shared_params)
+
+            self._shared_param_base_map[shared_params] = base
+
+        elif isinstance(shared_params, list):
+            self.shared_param_keyword = [param.split("_", 2)[0] for param in shared_params]
+            self.shared_param_base = [param.split("_", 2)[1] for param in shared_params]
+            self.given_shared_params = [param for param in shared_params]
+
+            for base, kw in zip(self.shared_param_base, self.given_shared_params):
+                self._shared_param_base_map[kw] = base
+        else:
+            raise NotImplementedError(f"Did not recognize shared_params: {shared_params}")
+
+    def _handle_non_series_validation(self, args_map: dict[str, Any] | list[dict[str, Any]]) -> list:
         """Handles dict unwrapping for Non-Series type of check function params
 
         :param args_map: dict with params names as keys and arguments as values
         """
         # Possibly sensitive to ordering issues
         results = []
-        if self._class_sig is None:
-            for holder in zip(*args_map.values()):
-                result = self._check_function(*holder)
+        if isinstance(args_map, dict):
+            args_map = [args_map]
+
+        for param in args_map:
+            if self._class_sig is None:
+                for holder in zip(*param.values()):
+                    result = self._check_function(*holder)
+                    results.append(result)
+                return results
+            for holder in zip(*param.values()):
+                result = self._check_function(self._class_sig, *holder)
                 results.append(result)
-            return results
-        for holder in zip(*args_map.values()):
-            result = self._check_function(self._class_sig, *holder)
-            results.append(result)
         return results
 
-    def validate(self, data: pd.DataFrame, **kwargs) -> pd.Series | list[bool]:
+    def add_shared_param_(self, shared_param: str) -> None:
+        """adds a keyword that a higher level object wants to use as a keyword for any shared parameter
+
+        For example, if the use when setting up the check has `team_qb` as a parameter in a function
+        but expects columns like `raiders_qb` or `chiefs_qb` fields to also work, they would add
+        `team` as an argument in `shared_param_keyword` or on the object instantiation.
+
+        """
+        # Can probably add a validation step above
+        self._handle_shared_params(shared_param)
+
+    def validate(self, data: pd.DataFrame, **kwargs) -> pd.Series | list[bool] | pd.DataFrame:
         """maps fields to function kwargs and runs the validation function
 
         :param data: the data to validate. Usually in the form of pd.DataFrame
         :param kwargs: the kwargs to pass to the validation function
-        :return: the validation result. list[bool] or pd.Series depending on the function
+        :return: the validation result. list[bool], pd.Series, pd.Dataframe depending on the function
+        and if there are shared parameters or not
         """
         if not self._required_params:
             _required_fields_kw = {
                 k: w for k, w in kwargs.items() if k in ('keep_exempt_keywords_used', 'keep_required_field_context')
             }
             self._identify_needed_params(fields_available=data.columns, **_required_fields_kw)
+
+        # Validating that the shared param fields given matches with the available function params
+        not_a_parameter = []
+        for param in self.given_shared_params:
+            if param not in self._required_params:
+                not_a_parameter.append(param)
+        if not_a_parameter:
+            raise KeyError(f"Parameter {not_a_parameter} is not a parameter in the function.")
 
         is_series_type = False
         """whether the parameters use pd.Series as argument types"""
@@ -140,24 +205,80 @@ class Check:
             class_sig = sig[0]
         self._class_sig = class_sig
 
+        # Going to split to start off, so it's easier for me to conceptualize
         for k, v in self._required_params.items():
-            if k not in self._exempt_keywords_used:
-                args_map[k] = data[k]
-                if not is_series_type:
-                    args_map[k] = data[k].astype(v)
+            if k not in self.given_shared_params:
+                if k not in self._exempt_keywords_used:
+                    if not is_series_type:
+                        args_map[k] = data[k].astype(v)
+                    args_map[k] = data[k]
 
-            # checks for the option keywords
-            # adds to the arg dict if it is, leaves blank if not
+        # This portion is for if there's a shared param (split out to make it easier to conceptualize)
+        print()
+        shared_param_column_mapping = dict()
+        """parameter name: set(df[column], column) key-value. (team_qb: [raiders_qb, chiefs_qb])"""
+        for k, v in self._required_params.items():
+            if k in self._shared_param_base_map:
+                shared_param_column_mapping[k] = list()
+                curr_shared_param_base = self._shared_param_base_map[k]
+                for column in data.columns.values.tolist():
+                    if column.endswith(f"{curr_shared_param_base}"):
+                        try:
+                            shared_param_column_mapping[k].append((data[column], column))
+                        except IndexError:
+                            print("WE ERRORED")
+
+        # checks for the option keywords
+        # adds to the arg dict if it is, leaves blank if not
         for exempt_kw in self._exempt_keywords_used:
             if exempt_kw in kwargs:
                 args_map[exempt_kw] = kwargs[exempt_kw]
 
-        if is_series_type:
-            if class_sig is None:
-                return self._check_function(**args_map)
-            result = self._check_function(class_sig, **args_map)
-            return result
-        return self._handle_non_series_validation(args_map=args_map)
+        if not self.given_shared_params:
+            if is_series_type:
+                if class_sig is None:
+                    return self._check_function(**args_map)
+                result = self._check_function(class_sig, **args_map)
+                return result
+            return self._handle_non_series_validation(args_map=args_map)
+
+        # Since there are shared parameters, we'll be returning a DataFrame with all
+        sub_results = {}
+
+        go_on = True
+        counter = 0
+        while go_on is True:
+            temp_args_map = args_map.copy()
+            _max_size = max([len(shared_param_column_mapping[k]) for k in shared_param_column_mapping.keys()])
+            curr_column: str | None = None
+            """stores column name"""
+
+            for idx, arg in enumerate(self.given_shared_params):  # shows args in shared_params (team_qb, curr_net)
+                # print(f"Max Length of {arg}: {_max_size}: Currently {counter}")
+                # shared_param_col_map values from the different conventions (raiders_qb, tomorrow_net)
+                temp_args_map[arg] = shared_param_column_mapping[arg][counter][0]
+                curr_column = shared_param_column_mapping[arg][counter][1]
+
+            if is_series_type:
+                if class_sig is None:
+                    result = self._check_function(**temp_args_map)
+                else:
+                    result = self._check_function(class_sig, **temp_args_map)
+            else:
+                result = self._handle_non_series_validation(args_map=args_map)
+
+            sub_results[curr_column] = result
+            counter += 1
+            if (counter + 1) > _max_size:
+                go_on = False
+
+        # Creating a copy of the dataframe and adding new data
+        return_data = data.copy()
+        for column, value in sub_results.items():
+            func_name = str(self._check_function.__name__)
+            func_name = func_name.lstrip("_")
+            return_data[f"{func_name}_{column}"] = pd.Series(value)
+        return return_data
 
 
 class Validation:
@@ -193,5 +314,10 @@ class Validation:
 
         for check in self._checklist:
             result = check.validate(df)
-            df[check.name] = result
+            if isinstance(result, pd.DataFrame):
+                for column in result.columns.values.tolist():
+                    if column not in df.columns:
+                        df[column] = result[column]
+            else:
+                df[check.name] = result
         return df

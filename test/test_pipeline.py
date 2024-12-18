@@ -10,7 +10,7 @@ class TestPipeLine:
 
     report_for_formatting = Report(
         name_convention="ohlcv",
-        field_mapping={"High": "high", "Low": "low"},
+        field_mapping={"High": "high", "Low": "low", 'Close': 'new_close'},
         column_type_cash=["high", "low"]
     )
 
@@ -60,13 +60,24 @@ class TestCheckProcess:
 
     report_for_formatting = Report(
         name_convention="ohlcv",
-        field_mapping={"High": "high", "Low": "low"},
+        field_mapping={
+            "High": "high",
+            "Low": "low",
+            'Close': 'foo_close',
+            "Volume": "bar_close",
+            "Open": "foobar_close"
+        },
         column_type_cash=["high", "low"]
     )
 
     df = qp.get_worksheet(report_for_formatting.name_convention, report=report_for_formatting)
 
-    def _series_type_check_function(self, low: pd.Series, high: pd.Series) -> pd.Series:
+    def _series_type_check_function(
+            self,
+            low: pd.Series,
+            high: pd.Series,
+            new_close: pd.Series,
+    ) -> pd.Series:
         return pd.Series(low < high)
 
     def non_series_check_function(self, low: float, high: float) -> bool:
@@ -87,5 +98,15 @@ class TestCheckProcess:
         new_check = Check(self._series_type_check_function)
         validation = Validation(new_check)
         result = validation.run(self.df)
+
+    def test_validation_with_shared(self):
+        # We need to add a list later because there are instances where the keywords get out of sync
+        new_check = Check(
+            self._series_type_check_function,
+            shared_params=["new_close"]
+        )
+
+        validation = Validation(new_check)
+        result = validation.run(self.df)
         print(result.info())
-        print(result)
+
