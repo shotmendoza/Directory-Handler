@@ -9,7 +9,8 @@ class Check:
             self,
             check_function: Callable[..., ...],
             *,
-            shared_params: str | list[str] | None = None
+            shared_params: str | list[str] | None = None,
+            excluded_prefixes: list[str] | None = None
     ):
         self._check_function = check_function
         self._exempt_keywords = ["option"]
@@ -48,6 +49,17 @@ class Check:
         self._shared_param_base_map = dict()
         """Shared Parameter Name: Parameter Base, key-value pairs"""
 
+        # Excluded Prefix related variables (which ties in with Shared Params)
+        self._excluded_prefixes: list[str] = list()
+        """ties to shared_param_keyword. If keyword is in this list, then it's an excluded keyword prefix
+        
+        The idea is that if we have a base `profit` and have `q1_profit`, `q2_profit`, and `total_profit`
+        as fields but don't want to include `total_profit` in our validation, we would exclude the
+        `total_profit` field by excluding the `total` keyword. 
+        """
+
+        if excluded_prefixes is not None:
+            self._excluded_prefixes = [kw for kw in excluded_prefixes]
         # Handles and updates the shared params
         if shared_params is not None:
             self.add_shared_param_(shared_params)
@@ -95,7 +107,7 @@ class Check:
             missing_fields = []
             for field in requested_func_param:
                 try:
-                    _split_field = field.split('_', maxsplit=2)[1]  # for use for shared fields
+                    _split_field = field.split('_', maxsplit=1)[1]  # for use for shared fields
                 except IndexError:
                     _split_field = ""
                 if field not in fields_available:
@@ -113,7 +125,7 @@ class Check:
 
     def _handle_shared_params(self, shared_params: str | list[str]) -> None:
         if isinstance(shared_params, str):
-            kw, base = shared_params.split('_', maxsplit=2)
+            kw, base = shared_params.split('_', maxsplit=1)
             self.shared_param_keyword.append(list(kw))
             self.shared_param_base.append(list(base))
             self.given_shared_params.append(shared_params)
@@ -121,8 +133,8 @@ class Check:
             self._shared_param_base_map[shared_params] = base
 
         elif isinstance(shared_params, list):
-            self.shared_param_keyword = [param.split("_", 2)[0] for param in shared_params]
-            self.shared_param_base = [param.split("_", 2)[1] for param in shared_params]
+            self.shared_param_keyword = [param.split("_", 1)[0] for param in shared_params]
+            self.shared_param_base = [param.split("_", 1)[1] for param in shared_params]
             self.given_shared_params = [param for param in shared_params]
 
             for base, kw in zip(self.shared_param_base, self.given_shared_params):
@@ -214,7 +226,6 @@ class Check:
                     args_map[k] = data[k]
 
         # This portion is for if there's a shared param (split out to make it easier to conceptualize)
-        print()
         shared_param_column_mapping = dict()
         """parameter name: set(df[column], column) key-value. (team_qb: [raiders_qb, chiefs_qb])"""
         for k, v in self._required_params.items():
@@ -222,11 +233,28 @@ class Check:
                 shared_param_column_mapping[k] = list()
                 curr_shared_param_base = self._shared_param_base_map[k]
                 for column in data.columns.values.tolist():
-                    if column.endswith(f"{curr_shared_param_base}"):
+                    args_shares_param_base = column.endswith(curr_shared_param_base)
+                    arg_is_not_base = column != curr_shared_param_base
+                    arg_kw_is_excluded = any((column.startswith(ep) for ep in self._excluded_prefixes))
+                    if args_shares_param_base and not arg_kw_is_excluded and arg_is_not_base is True:
                         try:
                             shared_param_column_mapping[k].append((data[column], column))
                         except IndexError:
                             print("WE ERRORED")
+
+        # ERROR CHECK TO CONFIRM THAT SHARED PARAMS ALL ALIGN CORRECTLY
+        # IN THE FUTURE, WE CAN ALSO MAKE SURE THAT THE KEYWORDS ALIGN AS WELL
+        if shared_param_column_mapping:
+            _size_mapping = {c: len(shared_param_column_mapping[c]) for c in shared_param_column_mapping}
+            _curr_max_param_size = max(_size_mapping.values())
+            _set_size_errors = []
+            for p, sets in shared_param_column_mapping.items():
+                if len(sets) > _curr_max_param_size:
+                    _set_size_errors.append(p)
+                    raise IndexError(
+                        f"Size mismatches, expected to equal {_size_mapping}"
+                        f"Update `excluded_keywords`"
+                    )
 
         # checks for the option keywords
         # adds to the arg dict if it is, leaves blank if not
@@ -244,7 +272,6 @@ class Check:
 
         # Since there are shared parameters, we'll be returning a DataFrame with all
         sub_results = {}
-
         go_on = True
         counter = 0
         while go_on is True:
@@ -254,8 +281,6 @@ class Check:
             """stores column name"""
 
             for idx, arg in enumerate(self.given_shared_params):  # shows args in shared_params (team_qb, curr_net)
-                # print(f"Max Length of {arg}: {_max_size}: Currently {counter}")
-                # shared_param_col_map values from the different conventions (raiders_qb, tomorrow_net)
                 temp_args_map[arg] = shared_param_column_mapping[arg][counter][0]
                 curr_column = shared_param_column_mapping[arg][counter][1]
 
@@ -265,7 +290,7 @@ class Check:
                 else:
                     result = self._check_function(class_sig, **temp_args_map)
             else:
-                result = self._handle_non_series_validation(args_map=args_map)
+                result = self._handle_non_series_validation(args_map=temp_args_map)
 
             sub_results[curr_column] = result
             counter += 1
