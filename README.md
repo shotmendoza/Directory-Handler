@@ -122,3 +122,5 @@ report = Report("ohlcv", {"High": "high", "Low": "low"})
 df = pipeline.get_worksheet("ohlcv", report=report)
 
 ```
+
+Needed reset from bug
