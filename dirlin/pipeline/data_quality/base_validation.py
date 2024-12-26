@@ -49,6 +49,9 @@ class Validation:
         `{parameter: column}` key-value pairs with single column pairs. These are one-to-one relationships.
         """
 
+        self.option_map: dict[str, str] = dict()
+        """the parameters for options with the prefix `option` which denotes a setting in the check"""
+
         #############################
         # runtime variable layer (class functions)
         #############################
@@ -168,15 +171,14 @@ class Validation:
                 self._param_base_name_map = dict()
                 self._column_base_name_map = dict()
 
-                for column in self._df_columns:
-                    base_name = self._generate_base_name(column)
-                    # if base_name is not None:
-                    self._column_base_name_map[column] = base_name
+            for column in self._df_columns:
+                base_name = self._generate_base_name(column)
+                self._column_base_name_map[column] = base_name
 
-                for arg in check.expected_arguments:
-                    if arg in self.shared_params or self._flag_infer_shared_params:
+            for arg in check.expected_arguments:
+                if arg in self.shared_params or self._flag_infer_shared_params:
+                    if arg not in self._param_base_name_map:
                         param_base_name = self._generate_base_name(arg)
-                        # if param_base_name is not None:
                         self._param_base_name_map[arg] = param_base_name
 
         # ==== categorize the params between shared and non-shared ====
@@ -188,7 +190,7 @@ class Validation:
                 case True:
                     if param not in self.arg_map:
                         self.arg_map[param] = param
-                case False:  # is a shared parameter field
+                case False:  # is a shared parameter field / 2024.12.26 or an Options parameter
                     if self._flag_infer_shared_params or param in self.shared_params:
                         for column in self._df_columns:
                             # parameter nfl_qb matches column raiders_qb (qb == qb)
@@ -199,6 +201,8 @@ class Validation:
                                         _found_shared_param = True
                                 if column not in self.shared_param_column_map[param]:
                                     self.shared_param_column_map[param].append(column)
+                    elif str(param).startswith('option_'):
+                        self.option_map[param] = param # need to figure out how to handle these
                     else:
                         _missing_parameters.append(param)
         if _missing_parameters:
@@ -209,11 +213,23 @@ class Validation:
             raise ValueError(error)
         if _found_shared_param:
             _max_shared_size = max([len(self.shared_param_column_map[k]) for k in self.shared_param_column_map.keys()])
+            _max_param = [
+                param for param in self.shared_param_column_map.keys()
+                if len(self.shared_param_column_map[param]) == _max_shared_size
+            ][0]
             for k, v in self.shared_param_column_map.items():
                 if len(v) != _max_shared_size:
+                    _max_kw = set(
+                        self._generate_base_name(column, kw_or_base=True)
+                        for column in self.shared_param_column_map[_max_param]
+                    )
+                    _short_kw = [self._generate_base_name(column, kw_or_base=True) for column in v]
+                    _mismatched_parameters = [kw for kw in _max_kw if kw not in _short_kw]
+
                     raise IndexError(
                         f"Length of shared parameter `{k}` ({len(v)}) != "
                         f"{_max_shared_size}. Size of shared columns must match."
+                        f"Missing Columns: {_mismatched_parameters}"
                     )
         return None
 
@@ -255,20 +271,12 @@ class Validation:
         combined_parameter_sets = [shared_combo | static_args for shared_combo in shared_param_combos]
 
         result = {}
-        # Temp fix until we get this thing solved
-        # The issue is that we'll eventually need to find a way to determine functions with
-        # shared parameters and those without shared parameters and run them differently
         if shared_args:
             for parameter_set in combined_parameter_sets:
                 match_mapping = {param: df[column] for param, column in parameter_set.items()}
                 kw = self._generate_base_name(list(parameter_set.values())[0], kw_or_base=True)
                 full_name = f"{check.name.strip('_')}_{kw}"
-
-                # might need to confirm whether the return type is a pd.Series to determine formatting
-                temp_result = check._check_function(**match_mapping)
-                result[full_name] = temp_result
-
-        # WE might want to add this under another function for handling value only functions
+                result[full_name] = df[match_mapping.keys()].apply(lambda row: check._check_function(**row), axis=1)
         else:
             check_name = check.name.strip('_')
             result[check_name] = df[static_args.keys()].apply(lambda row: check._check_function(**row), axis=1)

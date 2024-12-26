@@ -4,6 +4,12 @@ import pandas as pd
 
 
 class Report:
+    """creates a dataframe 'report' usable by the Dirlin Pipeline
+
+    Runs proper formatting and checks on the values, applies back-fill logic
+    to missing data in order to ensure quality in the data.
+
+    """
     def __init__(
             self,
             name_convention: str,

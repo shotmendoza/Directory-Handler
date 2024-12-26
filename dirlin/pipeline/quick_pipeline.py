@@ -7,6 +7,9 @@ from dirlin.pipeline.report import ReportType
 
 
 class Pipeline:
+    """an object that allows for quick ETL and EDA process setups
+
+    """
     def __init__(
             self,
             folder: Folder | str,
@@ -14,9 +17,7 @@ class Pipeline:
             report: ReportType | None = None,
             validation: ValidationType | None = None,
     ):
-        """an object that allows for quick ETL and EDA process setups
 
-        """
         # Should add more high level checks to these
         self._folder = folder
         if isinstance(folder, str):
