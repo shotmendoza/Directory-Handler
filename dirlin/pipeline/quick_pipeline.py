@@ -2,7 +2,8 @@
 import pandas as pd
 
 from dirlin import Folder
-from dirlin.pipeline.types import ValidationType, ReportType
+from dirlin.pipeline.data_quality.base_validation import ValidationType
+from dirlin.pipeline.report import ReportType
 
 
 class Pipeline:

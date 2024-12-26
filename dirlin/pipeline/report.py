@@ -1,3 +1,5 @@
+from typing import TypeVar
+
 import pandas as pd
 
 
@@ -108,3 +110,8 @@ class Report:
         )
         field = pd.Series(float(str(c).strip('%')) / 100 for c in field if '%' in c)
         return field
+
+
+ReportType = TypeVar('ReportType', bound=Report)
+"""Object type Report
+"""

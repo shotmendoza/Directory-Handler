@@ -94,19 +94,30 @@ class TestCheckProcess:
         result = non_series_check.validate(self.df)
         assert isinstance(result, list)
 
-    def test_validation_run(self):
-        new_check = Check(self._series_type_check_function)
-        validation = Validation(new_check)
-        result = validation.run(self.df)
-
-    def test_validation_with_shared(self):
-        # We need to add a list later because there are instances where the keywords get out of sync
-        new_check = Check(
-            self._series_type_check_function,
-            shared_params=["new_close"]
-        )
-
-        validation = Validation(new_check)
-        result = validation.run(self.df)
+    def test_multiple_types_check_function(self):
+        series_check = Check(self._series_type_check_function)
+        value_check = Check(self.non_series_check_function)
+        validation = Validation([series_check, value_check])
+        result = validation.run(self.df, infer_shared=True)
+        print(result)
         print(result.info())
 
+    def test_validation_run_shared_errors(self):
+        """expect an error due to infer_shared being set to False and no column matching param directly"""
+        with pytest.raises(ValueError) as ve:
+            new_check = Check(self._series_type_check_function)
+            validation = Validation(new_check)
+            result = validation.run(self.df)
+
+        assert (
+                str(ve.value) == "Couldn't find matching column for parameters: ['new_close']. "
+                                 "Consider making setting `infer_shared` to `True`."
+        )
+
+    def test_validation_run_shared_pass(self):
+        """expect that the validation runs"""
+        # We need to add a list later because there are instances where the keywords get out of sync
+        new_check = Check(self._series_type_check_function)
+        validation = Validation(new_check)
+        result = validation.run(self.df, infer_shared=True)
+        print(result)
