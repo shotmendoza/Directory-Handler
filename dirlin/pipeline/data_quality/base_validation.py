@@ -72,11 +72,7 @@ class Validation:
         """list of params given by the validation class when it knows which column is a shared param"""
 
         self._flag_infer_shared_params: bool = False
-        """will be set to True if arg is given on function call"""
-
-        # ==== properties from `generate_arg_map` ====
-        self._arg_map: dict[str, list[Any]] = dict()  # NOT CONFIRMED
-        """`{check_name: list[args]}` key-value pairs"""
+        """will be set to True if arg is given on function call or found"""
 
         # ==== properties from 'run_check_validation` ====
         self.results: dict[str, list] = dict()
@@ -86,7 +82,7 @@ class Validation:
             self,
             df: pd.DataFrame,
             *,
-            key_column: pd.Series | None = None,
+            key_column: str | None = None,
             field_mapping: dict[str, str] | None = None,
             infer_shared: bool = False
     ) -> pd.DataFrame:
@@ -106,45 +102,14 @@ class Validation:
         # ==== collection check function data ====
         for check in self.checks_performed:
             self._infer_param_class(check)  # map parameter to column relationships  (creates shared, static params)
-            self._generate_arg_map(check)  # creates the set of arguments each function needs
             self._align_parameters(check, df)  # ties the parameter to the columns and runs the checks
 
         # ==== Creating Final Deliverable from Run ====
         if key_column is not None:
-            temp_key_dict = {f"{key_column.name}": key_column}
+            temp_key_dict = {key_column: df[key_column]}
             self.results = self.results | temp_key_dict
         temp_df = pd.DataFrame.from_dict(self.results)
         return temp_df
-
-    def _generate_arg_map(self, check: Check):
-        """creates individual param args based on what check returns
-
-        populates the `self._arg_map` attribute that ties checks to their params.
-        [['high', 'bar_low', 'foo_close'], ['high', 'foo_low', 'bar_close']]
-
-        These are a list of arguments (parameters) that the function would accept, and includes shared params.
-        """
-
-        # (2) create a temporary list of the static args
-        temp_static_arg_map = [param for param in self.arg_map if param in check.expected_arguments]
-
-        # (1) first set up the key-value pairs of the params in this specific check. Creates temp mapping.
-        # (!) we don't need to run this if there are NO SHARED PARAMETERS. Can check for it
-        if self.shared_param_column_map:
-            temp_shared_arg_map = {}
-            for arg in check.expected_arguments:
-                if arg in self.shared_param_column_map:
-                    temp_shared_arg_map[arg] = self.shared_param_column_map[arg]
-
-            # (3) create the combination of possible arguments we will use when we get a tuple
-            process_list = []
-            """list[list[parameter] involved with the check"""
-            for shared in zip(*(temp_shared_arg_map[key] for key in temp_shared_arg_map)):
-                process_list.append(temp_static_arg_map + list(shared))
-            self._arg_map[check.name] = process_list
-
-        else:
-            self._arg_map[check.name] = temp_static_arg_map
 
     def _infer_param_class(self, check: Check) -> None:
         """determines whether a parameter is a shared parameter or a single parameter.
@@ -228,29 +193,10 @@ class Validation:
 
                     raise IndexError(
                         f"Length of shared parameter `{k}` ({len(v)}) != "
-                        f"{_max_shared_size}. Size of shared columns must match."
+                        f"{_max_shared_size}. Size of shared columns must match. "
                         f"Missing Columns: {_mismatched_parameters}"
                     )
         return None
-
-    @staticmethod
-    def _generate_base_name(field: str, kw_or_base: bool = False) -> str | None:
-        """used for generating the string base to match for shared params
-
-        If kw_or_base is set to `True`, will return the keyword. If set to
-        `False`, will return the base string. Defaults to `False`.
-
-        Returns None if column name is not able to be split. This would make it
-        ineligible to be a shared parameter column name.
-
-        """
-        try:
-            kw, base_name = str(field).split('_', maxsplit=1)
-        except ValueError:
-            return None
-        if kw_or_base is False:
-            return base_name
-        return kw
 
     def _align_parameters(self, check: Check, df: pd.DataFrame):
         """Ties the `parameter: column` mapping (self.arg_map + self.shared_param_column_map) and runs the checks
@@ -273,15 +219,36 @@ class Validation:
         result = {}
         if shared_args:
             for parameter_set in combined_parameter_sets:
-                match_mapping = {param: df[column] for param, column in parameter_set.items()}
                 kw = self._generate_base_name(list(parameter_set.values())[0], kw_or_base=True)
-                full_name = f"{check.name.strip('_')}_{kw}"
-                result[full_name] = df[match_mapping.keys()].apply(lambda row: check._check_function(**row), axis=1)
+                name = f"{check.name.strip('_')}_{kw}"
+
+                reverse_parameter_set = {v: k for k, v in parameter_set.items()}
+                temp_df = df.rename(columns=reverse_parameter_set)
+                result[name] = temp_df[parameter_set.keys()].apply(lambda row: check._check_function(**row), axis=1)
         else:
             check_name = check.name.strip('_')
             result[check_name] = df[static_args.keys()].apply(lambda row: check._check_function(**row), axis=1)
 
         self.results = self.results | result
+
+    @staticmethod
+    def _generate_base_name(field: str, kw_or_base: bool = False) -> str | None:
+        """used for generating the string base to match for shared params
+
+        If kw_or_base is set to `True`, will return the keyword. If set to
+        `False`, will return the base string. Defaults to `False`.
+
+        Returns None if column name is not able to be split. This would make it
+        ineligible to be a shared parameter column name.
+
+        """
+        try:
+            kw, base_name = str(field).split('_', maxsplit=1)
+        except ValueError:
+            return None
+        if kw_or_base is False:
+            return base_name
+        return kw
 
 
 ValidationType = TypeVar('ValidationType', bound=Validation)
