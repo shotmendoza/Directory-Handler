@@ -41,6 +41,13 @@ class Report:
             normalize_cash_columns: bool = False,
             drop_duplicated_columns: bool = False
     ) -> pd.DataFrame:
+        """formats the report by updating the field names and doing elementary data quality checks on the report
+
+        :param df: the dataframe we are parsing and wrangling
+        :param normalize_cash_columns: matches all columns to the signature of the key_cash_column
+        :param drop_duplicated_columns: whether to drop duplicated columns
+        :return: formatted dataframe
+        """
 
         # Normalizing the column names for data cleaning later in the formatting process
         working_df = df.rename(columns=self.field_mapping).copy()
@@ -85,17 +92,54 @@ class Report:
             """
             need to add logic for normalizing the cash columns. This logic should match the signature of key column
             """
-            ...
+            # ==== requires the key_cash_column and cash_columns to be specified on class call ====
+            # we'll check if one or both are missing
+            _check_missing = []
+            if self._key_cash_column is None:
+                _check_missing.append("key_cash_column")
+            if self._cash_columns is None:
+                _check_missing.append("cash_columns")
+            if _check_missing:
+                raise ValueError(
+                    f"{''.join(_check_missing)} missing from class call. The parameters need to be specified"
+                )
+
+            for column in self._cash_columns:
+                working_df[column] = pd.Series([
+                    abs(column_val) * -1 if key_val < 0 else abs(column_val)
+                    for column_val, key_val in zip(working_df[column], working_df[self._key_cash_column])
+                ])
 
         if drop_duplicated_columns:
             """Need to add the logic
             Should drop the column if duplicate name or naming convention is found in the report
             """
-            ...
 
         if not self._df:
             self._df = working_df.copy()
         return working_df
+
+    def flip_signature(self, signature_columns: list[str]) -> pd.DataFrame:
+        """flips the signature of all the columns in the signature_column argument
+
+        The function assumes that Report.format() has been run at least once so that
+        Report._df is populated.
+
+        This function is used any time a 'reversal' file needs to be created.
+        If you need to back out the original amount, or 'zero-out' a column
+        so that two DataFrames equal 0, then this function is helpful.
+
+        :param signature_columns: will go through the list and flip the signatures in this column
+        :return: DataFrame with the required fields having flipped signatures
+        """
+        if self._df is None:
+            raise ValueError(
+                "Report.format() has not been run yet. Please run the method once to initialize self._df")
+        df = self._df.copy()
+
+        for column in signature_columns:
+            df[column] = df[column] * -1
+        return df
 
     @staticmethod
     def _clean_number_column(field: pd.Series) -> pd.Series:
