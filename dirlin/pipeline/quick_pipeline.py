@@ -106,6 +106,9 @@ class Pipeline:
     def run_validation(
             self,
             validation: ValidationType,
+            *,
+            key_column: str | None = None,
+            infer_shared: bool = True
     ):
         try:
             df = self._df.copy()
@@ -122,4 +125,4 @@ class Pipeline:
                 keep_df_context=False,
                 keep_report_context=True
             )
-        return validation.run(df)
+        return validation.run(df, key_column=key_column, infer_shared=infer_shared)
