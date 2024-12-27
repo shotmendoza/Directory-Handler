@@ -120,4 +120,5 @@ class TestCheckProcess:
         new_check = Check(self._series_type_check_function)
         validation = Validation(new_check)
         result = validation.run(self.df, infer_shared=True)
-        print(result)
+
+        print(validation.generate_error_log())

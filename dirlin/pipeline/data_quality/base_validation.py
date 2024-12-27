@@ -33,14 +33,14 @@ class Validation:
         """List of all checks to perform for the validation"""
 
         # ==== Used to Create Arguments ====
-        self.shared_param_column_map: dict[str, list] = dict()  # confirmed
+        self._shared_param_column_map: dict[str, list] = dict()  # confirmed
         """`{parameter: list[column]}` key-value pairs of all the checks with shared parameters.
         
         To go one step further, these are the parameters that are "on deck" for the entire 
         set of checks that we are running. We'll only need to use the ones that are in the check we are using.
         """
 
-        self.arg_map: dict[str, str] = dict()  # confirmed
+        self._arg_map: dict[str, str] = dict()  # confirmed
         """The static parameters with only one column that matches the parameter.
         
         The idea is that if the column and parameter have a one-to-one relationships, then
@@ -49,7 +49,7 @@ class Validation:
         `{parameter: column}` key-value pairs with single column pairs. These are one-to-one relationships.
         """
 
-        self.option_map: dict[str, str] = dict()
+        self._option_map: dict[str, str] = dict()
         """the parameters for options with the prefix `option` which denotes a setting in the check"""
 
         #############################
@@ -68,7 +68,7 @@ class Validation:
         self._param_base_name_map: dict[str, str] | None = None
         """used for finding shared parameters"""
 
-        self.shared_params: list[str] | list = shared_param if shared_param is not None else list()
+        self._shared_params: list[str] | list = shared_param if shared_param is not None else list()
         """list of params given by the validation class when it knows which column is a shared param"""
 
         self._flag_infer_shared_params: bool = False
@@ -77,6 +77,12 @@ class Validation:
         # ==== properties from 'run_check_validation` ====
         self.results: dict[str, list] = dict()
         """Final dictionary that represents the results of the checks"""
+
+        self.flag_run_processed: bool = False
+        """whether Validation.run() was ran. Marked True once it has run at  least once."""
+
+        self.key_column: str | None = None
+        """Used to store the key column if one was given"""
 
     def run(
             self,
@@ -106,10 +112,55 @@ class Validation:
 
         # ==== Creating Final Deliverable from Run ====
         if key_column is not None:
+            self.key_column = key_column
             temp_key_dict = {key_column: df[key_column]}
             self.results = self.results | temp_key_dict
         temp_df = pd.DataFrame.from_dict(self.results)
+        self.flag_run_processed = True
         return temp_df
+
+    def generate_base_results(self, key_column: str | None = None):
+        """"""
+        self._confirm_run_was_ran()
+
+    def generate_error_log(self):
+        """creates an error log based off the results of the Validation.run()
+
+        Will have the number of lines the check has validated, and the number of
+        errors that the check has found.
+
+        Results:
+                                              total_checked  errors
+            check
+            series_type_check_function_foobar             21       0
+            series_type_check_function_foo                21       0
+            series_type_check_function_bar                21       0
+
+
+        :return: The DataFrame of the Error Log
+        """
+        self._confirm_run_was_ran()
+
+        error_log = dict()
+        for check, result in self.results.items():
+            _error_count = len(result) - sum(result)
+            _total_validated = len(result)
+            error_log[check] = [_total_validated, _error_count]
+        error_log_df = pd.DataFrame.from_dict(error_log, orient='index')
+        error_log_df.columns = ['total_checked', 'errors']
+        error_log_df.index.names = ['check']
+        return error_log_df
+
+    def generate_fix_file(self):
+        """"""
+        self._confirm_run_was_ran()
+
+    def _confirm_run_was_ran(self):
+        if self.flag_run_processed is False:
+            raise RuntimeError(
+                f"Expected Validation.run() method to be run once. "
+                f"Please ensure it is before attempting to run the `generate` functions"
+            )
 
     def _infer_param_class(self, check: Check) -> None:
         """determines whether a parameter is a shared parameter or a single parameter.
@@ -128,8 +179,8 @@ class Validation:
         _found_shared_param = None
         """used for checking if a column is a shared parameter column"""
 
-        if self.shared_params:
-            _found_shared_param = any((p in self.shared_params for p in check.expected_arguments))
+        if self._shared_params:
+            _found_shared_param = any((p in self._shared_params for p in check.expected_arguments))
 
         if _found_shared_param or self._flag_infer_shared_params:
             if self._param_base_name_map is None and self._column_base_name_map is None:
@@ -141,7 +192,7 @@ class Validation:
                 self._column_base_name_map[column] = base_name
 
             for arg in check.expected_arguments:
-                if arg in self.shared_params or self._flag_infer_shared_params:
+                if arg in self._shared_params or self._flag_infer_shared_params:
                     if arg not in self._param_base_name_map:
                         param_base_name = self._generate_base_name(arg)
                         self._param_base_name_map[arg] = param_base_name
@@ -153,21 +204,21 @@ class Validation:
         for param in check.expected_arguments:
             match param in self._df_columns:
                 case True:
-                    if param not in self.arg_map:
-                        self.arg_map[param] = param
+                    if param not in self._arg_map:
+                        self._arg_map[param] = param
                 case False:  # is a shared parameter field / 2024.12.26 or an Options parameter
-                    if self._flag_infer_shared_params or param in self.shared_params:
+                    if self._flag_infer_shared_params or param in self._shared_params:
                         for column in self._df_columns:
                             # parameter nfl_qb matches column raiders_qb (qb == qb)
                             if self._column_base_name_map[column] == self._param_base_name_map[param]:
-                                if param not in self.shared_param_column_map:
-                                    self.shared_param_column_map[param] = list()
+                                if param not in self._shared_param_column_map:
+                                    self._shared_param_column_map[param] = list()
                                     if not _found_shared_param:
                                         _found_shared_param = True
-                                if column not in self.shared_param_column_map[param]:
-                                    self.shared_param_column_map[param].append(column)
+                                if column not in self._shared_param_column_map[param]:
+                                    self._shared_param_column_map[param].append(column)
                     elif str(param).startswith('option_'):
-                        self.option_map[param] = param # need to figure out how to handle these
+                        self._option_map[param] = param # need to figure out how to handle these
                     else:
                         _missing_parameters.append(param)
         if _missing_parameters:
@@ -177,16 +228,16 @@ class Validation:
                 error = f"{error} {suggestion}"
             raise ValueError(error)
         if _found_shared_param:
-            _max_shared_size = max([len(self.shared_param_column_map[k]) for k in self.shared_param_column_map.keys()])
+            _max_shared_size = max([len(self._shared_param_column_map[k]) for k in self._shared_param_column_map.keys()])
             _max_param = [
-                param for param in self.shared_param_column_map.keys()
-                if len(self.shared_param_column_map[param]) == _max_shared_size
+                param for param in self._shared_param_column_map.keys()
+                if len(self._shared_param_column_map[param]) == _max_shared_size
             ][0]
-            for k, v in self.shared_param_column_map.items():
+            for k, v in self._shared_param_column_map.items():
                 if len(v) != _max_shared_size:
                     _max_kw = set(
                         self._generate_base_name(column, kw_or_base=True)
-                        for column in self.shared_param_column_map[_max_param]
+                        for column in self._shared_param_column_map[_max_param]
                     )
                     _short_kw = [self._generate_base_name(column, kw_or_base=True) for column in v]
                     _mismatched_parameters = [kw for kw in _max_kw if kw not in _short_kw]
@@ -204,10 +255,10 @@ class Validation:
 
         """
         # ==== creates the 'parameter: column' mapping ====
-        static_args = {kw: self.arg_map[kw] for kw in check.expected_arguments if kw in self.arg_map}
+        static_args = {kw: self._arg_map[kw] for kw in check.expected_arguments if kw in self._arg_map}
         shared_args = {
-            kw: self.shared_param_column_map[kw]
-            for kw in check.expected_arguments if kw in self.shared_param_column_map
+            kw: self._shared_param_column_map[kw]
+            for kw in check.expected_arguments if kw in self._shared_param_column_map
         }
 
         # ==== creates the `parameter: column` mapping for shared parameters ====
@@ -224,7 +275,10 @@ class Validation:
 
                 reverse_parameter_set = {v: k for k, v in parameter_set.items()}
                 temp_df = df.rename(columns=reverse_parameter_set)
-                result[name] = temp_df[parameter_set.keys()].apply(lambda row: check._check_function(**row), axis=1)
+                r = temp_df[parameter_set.keys()].apply(
+                    lambda row: check._check_function(**row), axis=1
+                )
+                result[name] = r[0]  # confirm this works, seems a little shakey
         else:
             check_name = check.name.strip('_')
             result[check_name] = df[static_args.keys()].apply(lambda row: check._check_function(**row), axis=1)
