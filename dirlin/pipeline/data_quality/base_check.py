@@ -9,6 +9,7 @@ class Check:
             self,
             check_function: Callable[..., ...],
             *,
+            fix_function: Callable[..., Any] | None = None,
             option_keywords: list[str] | str = "option"
     ):
         ############################
@@ -18,20 +19,23 @@ class Check:
         # Check needs to know exactly what parameters it needs
 
         # ==== function level info ====
-        self._check_function = check_function
+        self.check_function = check_function
         """function wrapper. This function is used to perform boolean checks."""
 
-        self.name: str = self._check_function.__name__
+        self.fix_function = fix_function
+        """function wrapper. Going to start off by separating the fix from checking, but will end up combining logic"""
+
+        self.name: str = self.check_function.__name__
         """name of the function"""
 
         # ==== parameter level info ====
         # The mapping needs to have a set or dict that I can quickly reference multiple times
         # - parameter dictionaries could be built off this by using the keys
-        self.__annotations__: dict[str, Any] = inspect.get_annotations(self._check_function)
+        self.__annotations__: dict[str, Any] = inspect.get_annotations(self.check_function)
         """all parameters of the function. `param`: `Type(arg)`, key-value pair"""
 
         # used for quick parameter name checks and class signatures
-        self._param_signatures = list(inspect.signature(self._check_function).parameters)
+        self._param_signatures = list(inspect.signature(self.check_function).parameters)
         """similar to __annotations__ but discloses only name and use of self or cls as an argument (param instance)"""
 
         # class signatures (cls, self)
@@ -167,11 +171,11 @@ class Check:
         for param in args_map:
             if self._class_sig is None:
                 for holder in zip(*param.values()):
-                    result = self._check_function(*holder)
+                    result = self.check_function(*holder)
                     results.append(result)
                 return results
             for holder in zip(*param.values()):
-                result = self._check_function(self._class_sig, *holder)
+                result = self.check_function(self._class_sig, *holder)
                 results.append(result)
         return results
 
@@ -213,7 +217,7 @@ class Check:
         class_sig: str | None = None
 
         # Checking for class signatures like self, cls
-        sig = list(inspect.signature(self._check_function).parameters)
+        sig = list(inspect.signature(self.check_function).parameters)
         if sig[0] in self._param_instances:
             class_sig = sig[0]
         self._class_sig = class_sig
@@ -266,8 +270,8 @@ class Check:
         if not self.given_shared_params:
             if is_series_type:
                 if class_sig is None:
-                    return self._check_function(**args_map)
-                result = self._check_function(class_sig, **args_map)
+                    return self.check_function(**args_map)
+                result = self.check_function(class_sig, **args_map)
                 return result
             return self._handle_non_series_validation(args_map=args_map)
 
@@ -287,9 +291,9 @@ class Check:
 
             if is_series_type:
                 if class_sig is None:
-                    result = self._check_function(**temp_args_map)
+                    result = self.check_function(**temp_args_map)
                 else:
-                    result = self._check_function(class_sig, **temp_args_map)
+                    result = self.check_function(class_sig, **temp_args_map)
             else:
                 result = self._handle_non_series_validation(args_map=temp_args_map)
 
@@ -301,7 +305,7 @@ class Check:
         # Creating a copy of the dataframe and adding new data
         return_data = data.copy()
         for column, value in sub_results.items():
-            func_name = str(self._check_function.__name__)
+            func_name = str(self.check_function.__name__)
             func_name = func_name.lstrip("_")
             return_data[f"{func_name}_{column}"] = pd.Series(value)
         return return_data

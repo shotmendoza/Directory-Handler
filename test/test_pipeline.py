@@ -117,7 +117,9 @@ class TestCheckProcess:
     def test_validation_run_shared_pass(self):
         """expect that the validation runs"""
         # We need to add a list later because there are instances where the keywords get out of sync
-        new_check = Check(self._series_type_check_function)
+        new_check = Check(
+            self._series_type_check_function,
+        )
         validation = Validation(new_check)
         result = validation.run(self.df, infer_shared=True)
 

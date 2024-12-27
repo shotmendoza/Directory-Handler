@@ -146,6 +146,7 @@ class Validation:
             _error_count = len(result) - sum(result)
             _total_validated = len(result)
             error_log[check] = [_total_validated, _error_count]
+
         error_log_df = pd.DataFrame.from_dict(error_log, orient='index')
         error_log_df.columns = ['total_checked', 'errors']
         error_log_df.index.names = ['check']
@@ -276,12 +277,12 @@ class Validation:
                 reverse_parameter_set = {v: k for k, v in parameter_set.items()}
                 temp_df = df.rename(columns=reverse_parameter_set)
                 r = temp_df[parameter_set.keys()].apply(
-                    lambda row: check._check_function(**row), axis=1
+                    lambda row: check.check_function(**row), axis=1
                 )
                 result[name] = r[0]  # confirm this works, seems a little shakey
         else:
             check_name = check.name.strip('_')
-            result[check_name] = df[static_args.keys()].apply(lambda row: check._check_function(**row), axis=1)
+            result[check_name] = df[static_args.keys()].apply(lambda row: check.check_function(**row), axis=1)
 
         self.results = self.results | result
 
