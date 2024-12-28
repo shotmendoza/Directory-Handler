@@ -236,6 +236,14 @@ class Validation:
             ][0]
             for k, v in self._shared_param_column_map.items():
                 if len(v) != _max_shared_size:
+                    # assumes that if only 1 item in a list at the end, then it's using
+                    # a function that takes a shared param, but the specific report only
+                    # has one column that follows the naming convention
+                    if len(v) == 1:
+                        self._arg_map[k] = v[0]
+                        del self._shared_param_column_map[k]
+                        continue
+
                     _max_kw = set(
                         self._generate_base_name(column, kw_or_base=True)
                         for column in self._shared_param_column_map[_max_param]
@@ -279,7 +287,11 @@ class Validation:
                 r = temp_df[parameter_set.keys()].apply(
                     lambda row: check.check_function(**row), axis=1
                 )
-                result[name] = r[0]  # confirm this works, seems a little shakey
+
+                if pd.Series in check.expected_arguments.values():
+                    result[name] = r[0]  # confirm this works, seems a little shakey
+                else:
+                    result[name] = r
         else:
             check_name = check.name.strip('_')
             result[check_name] = df[static_args.keys()].apply(lambda row: check.check_function(**row), axis=1)
