@@ -19,23 +19,23 @@ class Check:
         # Check needs to know exactly what parameters it needs
 
         # ==== function level info ====
-        self.check_function = check_function
+        self._check_function = check_function
         """function wrapper. This function is used to perform boolean checks."""
 
         self.fix_function = fix_function
         """function wrapper. Going to start off by separating the fix from checking, but will end up combining logic"""
 
-        self.name: str = self.check_function.__name__
+        self.name: str = self._check_function.__name__
         """name of the function"""
 
         # ==== parameter level info ====
         # The mapping needs to have a set or dict that I can quickly reference multiple times
         # - parameter dictionaries could be built off this by using the keys
-        self.__annotations__: dict[str, Any] = inspect.get_annotations(self.check_function)
+        self.__annotations__: dict[str, Any] = inspect.get_annotations(self._check_function)
         """all parameters of the function. `param`: `Type(arg)`, key-value pair"""
 
         # used for quick parameter name checks and class signatures
-        self._param_signatures = list(inspect.signature(self.check_function).parameters)
+        self._param_signatures = list(inspect.signature(self._check_function).parameters)
         """similar to __annotations__ but discloses only name and use of self or cls as an argument (param instance)"""
 
         # class signatures (cls, self)
@@ -57,8 +57,33 @@ class Check:
 
         For example, if a function has the parameters `def function(arg1, arg2, arg3)`,
         the function will return a dictionary of `{arg1: type(arg1), arg2: type(arg2), arg3: type(arg3)}`.
-        
         """
+
+        # i) we need to add some checks now since `inspect.get_annotations` does not return
+        # a proper dictionary with all parameters unless it's been typed. I think we force
+        # the user to type their functions to make it clean
+        _function_signature_check = [
+            sig for sig in inspect.signature(self._check_function).parameters.keys()
+            if sig not in self._arg_option_signature and sig not in ('self', 'cls')
+        ]
+        if len(self.expected_arguments) != len(_function_signature_check):
+            raise IndexError(
+                f"One or more parameters are not type in the function `{self._check_function.__name__}`."
+                f" Please add the proper typing to your function parameters."
+            )
+
+    def run(self, **kwargs) -> Any:
+        """API that wraps around the `_check_function` so that we can  deal with things like
+        signatures within the Check class since it abstracts it out of the Validation class.
+
+        Uses `_handle_class_signatures()` to handle class signatures`. Returns whatever the
+        check_function would have returned.
+        """
+        _has_class_signature = self._handle_class_signatures()
+
+        if not _has_class_signature:
+            return self._check_function(**kwargs)
+        return self._check_function(_has_class_signature, **kwargs)
 
     def _handle_class_signatures(self) -> str | None:
         """identifies whether the check function has class arguments (self, cls) as its first argument
@@ -171,14 +196,16 @@ class Check:
         for param in args_map:
             if self._class_sig is None:
                 for holder in zip(*param.values()):
-                    result = self.check_function(*holder)
+                    result = self._check_function(*holder)
                     results.append(result)
                 return results
             for holder in zip(*param.values()):
-                result = self.check_function(self._class_sig, *holder)
+                result = self._check_function(self._class_sig, *holder)
                 results.append(result)
         return results
 
+    # ==== DEPRECATED ====
+    # Currently keeping until we have the Validation Class Fully  fleshed out
     def validate(self, data: pd.DataFrame, **kwargs) -> pd.Series | list[bool] | pd.DataFrame:
         """maps fields to function kwargs and runs the validation function
 
@@ -217,7 +244,7 @@ class Check:
         class_sig: str | None = None
 
         # Checking for class signatures like self, cls
-        sig = list(inspect.signature(self.check_function).parameters)
+        sig = list(inspect.signature(self._check_function).parameters)
         if sig[0] in self._param_instances:
             class_sig = sig[0]
         self._class_sig = class_sig
@@ -270,8 +297,8 @@ class Check:
         if not self.given_shared_params:
             if is_series_type:
                 if class_sig is None:
-                    return self.check_function(**args_map)
-                result = self.check_function(class_sig, **args_map)
+                    return self._check_function(**args_map)
+                result = self._check_function(class_sig, **args_map)
                 return result
             return self._handle_non_series_validation(args_map=args_map)
 
@@ -291,9 +318,9 @@ class Check:
 
             if is_series_type:
                 if class_sig is None:
-                    result = self.check_function(**temp_args_map)
+                    result = self._check_function(**temp_args_map)
                 else:
-                    result = self.check_function(class_sig, **temp_args_map)
+                    result = self._check_function(class_sig, **temp_args_map)
             else:
                 result = self._handle_non_series_validation(args_map=temp_args_map)
 
@@ -305,7 +332,7 @@ class Check:
         # Creating a copy of the dataframe and adding new data
         return_data = data.copy()
         for column, value in sub_results.items():
-            func_name = str(self.check_function.__name__)
+            func_name = str(self._check_function.__name__)
             func_name = func_name.lstrip("_")
             return_data[f"{func_name}_{column}"] = pd.Series(value)
         return return_data

@@ -1,4 +1,4 @@
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import pandas as pd
 
@@ -285,7 +285,7 @@ class Validation:
                 reverse_parameter_set = {v: k for k, v in parameter_set.items()}
                 temp_df = df.rename(columns=reverse_parameter_set)
                 r = temp_df[parameter_set.keys()].apply(
-                    lambda row: check.check_function(**row), axis=1
+                    lambda row: check.run(**row), axis=1
                 )
 
                 if pd.Series in check.expected_arguments.values():
@@ -294,7 +294,7 @@ class Validation:
                     result[name] = r
         else:
             check_name = check.name.strip('_')
-            result[check_name] = df[static_args.keys()].apply(lambda row: check.check_function(**row), axis=1)
+            result[check_name] = df[static_args.keys()].apply(lambda row: check.run(**row), axis=1)
 
         self.results = self.results | result
 
