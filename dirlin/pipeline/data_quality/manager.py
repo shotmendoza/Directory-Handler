@@ -36,8 +36,9 @@ class Validation:
         self._shared_param_column_map: dict[str, list] = dict()  # confirmed
         """`{parameter: list[column]}` key-value pairs of all the checks with shared parameters.
         
-        To go one step further, these are the parameters that are "on deck" for the entire 
-        set of checks that we are running. We'll only need to use the ones that are in the check we are using.
+        I'm going to keep this a class property for now. I don't want to pass this value
+        all around when going through the checks. We'll restart the value at the beginning
+        of every `run()`
         """
 
         self._arg_map: dict[str, str] = dict()  # confirmed
@@ -57,13 +58,9 @@ class Validation:
         #############################
 
         # ==== All ====
-        self._df_columns: pd.Index | list[str] | None = None
-        """an index or list of column names in the given dataframe"""
 
         # ==== properties from `infer_param_class` ====
         # properties should hold information regarding the check
-        self._column_base_name_map: dict[str, str] | None = None
-        """used for finding shared parameters"""
 
         self._param_base_name_map: dict[str, str] | None = None
         """used for finding shared parameters"""
@@ -102,12 +99,16 @@ class Validation:
             df = df.rename(columns=field_mapping)
         if infer_shared:
             self._flag_infer_shared_params = True
-        if self._df_columns is None:
-            self._df_columns = df.columns
+
+        _df_columns: pd.Index = df.columns
+        """an index or list of column names in the given dataframe"""
+
+        # related to ticket #5 keeping this as a property, but resetting on `run()` function
+        self._shared_param_column_map: dict[str, list] = dict()
 
         # ==== collection check function data ====
         for check in self.checks_performed:
-            self._infer_param_class(check)  # map parameter to column relationships  (creates shared, static params)
+            self._infer_param_class(check, _df_columns)  # map parameter to columns (creates shared, static params)
             self._align_parameters(check, df)  # ties the parameter to the columns and runs the checks
 
         # ==== Creating Final Deliverable from Run ====
@@ -163,7 +164,7 @@ class Validation:
                 f"Please ensure it is before attempting to run the `generate` functions"
             )
 
-    def _infer_param_class(self, check: Check) -> None:
+    def _infer_param_class(self, check: Check, columns: pd.Index) -> None:
         """determines whether a parameter is a shared parameter or a single parameter.
 
         Adds `shared parameter` to self.shared_param_column_map and
@@ -180,17 +181,19 @@ class Validation:
         _found_shared_param = None
         """used for checking if a column is a shared parameter column"""
 
+        _column_base_name_map: dict[str, str] = dict()
+        """used for finding shared parameters"""
+
         if self._shared_params:
             _found_shared_param = any((p in self._shared_params for p in check.expected_arguments))
 
         if _found_shared_param or self._flag_infer_shared_params:
-            if self._param_base_name_map is None and self._column_base_name_map is None:
+            if self._param_base_name_map is None:
                 self._param_base_name_map = dict()
-                self._column_base_name_map = dict()
 
-            for column in self._df_columns:
+            for column in columns:
                 base_name = self._generate_base_name(column)
-                self._column_base_name_map[column] = base_name
+                _column_base_name_map[column] = base_name
 
             for arg in check.expected_arguments:
                 if arg in self._shared_params or self._flag_infer_shared_params:
@@ -203,15 +206,15 @@ class Validation:
         # non_shared: {parameter_name: column name}
         _missing_parameters = []
         for param in check.expected_arguments:
-            match param in self._df_columns:
+            match param in columns:
                 case True:
                     if param not in self._arg_map:
                         self._arg_map[param] = param
                 case False:  # is a shared parameter field / 2024.12.26 or an Options parameter
                     if self._flag_infer_shared_params or param in self._shared_params:
-                        for column in self._df_columns:
+                        for column in columns:
                             # parameter nfl_qb matches column raiders_qb (qb == qb)
-                            if self._column_base_name_map[column] == self._param_base_name_map[param]:
+                            if _column_base_name_map[column] == self._param_base_name_map[param]:
                                 if param not in self._shared_param_column_map:
                                     self._shared_param_column_map[param] = list()
                                     if not _found_shared_param:
