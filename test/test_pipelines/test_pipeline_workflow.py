@@ -54,7 +54,7 @@ def test_pipeline_workflow():
 
     # same, could be fixtures, but creating Report
     report1 = Report(df=single_stock_df())
-    report2 = Report(df=single_stock_df_b)
+    report2 = Report(df=single_stock_df_b())
 
     # Testing new pipeline api
     pipeline = Pipeline()

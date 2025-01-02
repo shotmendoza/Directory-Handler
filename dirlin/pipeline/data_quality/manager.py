@@ -2,9 +2,7 @@ from typing import TypeVar
 
 import pandas as pd
 
-from dirlin import Folder, Path
 from dirlin.pipeline.data_quality.check import Check, CheckType
-from dirlin.pipeline.data_quality.report import Report, ReportType
 
 
 class Validation:
@@ -286,9 +284,7 @@ class Validation:
 
                 reverse_parameter_set = {v: k for k, v in parameter_set.items()}
                 temp_df = df.rename(columns=reverse_parameter_set)
-                r = temp_df[parameter_set.keys()].apply(
-                    lambda row: check.run(**row), axis=1
-                )
+                r = temp_df[parameter_set.keys()].apply(lambda row: check.run(**row), axis=1)
 
                 if pd.Series in check.expected_arguments.values():
                     result[name] = r[0]  # confirm this works, seems a little shakey
