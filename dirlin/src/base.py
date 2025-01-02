@@ -147,7 +147,7 @@ class Folder:
             most_recent_file = Path(sorted(files, key=os.path.getmtime, reverse=True)[0])
             return most_recent_file
         except IndexError:
-            raise IndexError(
+            raise FileNotFoundError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
     def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:

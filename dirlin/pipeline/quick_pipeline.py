@@ -73,7 +73,16 @@ class Pipeline:
     ):
         # ==== i) initialize the report object and run the checks if True ====
         # we currently need to do this because Report requires that the values be formalized
-        _df = self._folder.open_recent(report.name_convention)
+        if report.df is None:
+            try:
+                _df = self._folder.open_recent(report.name_convention)
+            except FileNotFoundError:
+                raise FileNotFoundError(f"No reports under `{report.name_convention}` within given timeframe.")
+        else:
+            if not isinstance(report.df, pd.DataFrame):
+                raise ValueError(f"`report.df` must be a Pandas dataframe. Got `{type(report.df)}`")
+            _df = report.df.copy()
+
         report.format(
             df=_df,
             normalize_cash_columns=normalize_cash_columns,
