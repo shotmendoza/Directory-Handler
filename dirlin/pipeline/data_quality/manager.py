@@ -2,7 +2,9 @@ from typing import TypeVar
 
 import pandas as pd
 
-from dirlin.pipeline.data_quality.base_check import Check, CheckType
+from dirlin import Folder, Path
+from dirlin.pipeline.data_quality.check import Check, CheckType
+from dirlin.pipeline.data_quality.report import Report, ReportType
 
 
 class Validation:

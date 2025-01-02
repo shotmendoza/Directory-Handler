@@ -1,9 +1,9 @@
 """This is the quick pipeline"""
 import pandas as pd
 
-from dirlin import Folder
-from dirlin.pipeline.data_quality.base_validation import ValidationType
-from dirlin.pipeline.report import ReportType
+from dirlin import Folder, Path
+from dirlin.pipeline.data_quality.manager import ValidationType
+from dirlin.pipeline.data_quality.report import ReportType
 
 
 class Pipeline:
@@ -12,117 +12,113 @@ class Pipeline:
     """
     def __init__(
             self,
-            folder: Folder | str,
-            *,
-            report: ReportType | None = None,
-            validation: ValidationType | None = None,
+            folder: Folder | str | None = None,
     ):
-
-        # Should add more high level checks to these
+        # ==== setting up the data pull from directory ====
+        if folder is None:
+            folder = (Path.home() / 'Downloads')
+            if not folder.exists():
+                raise FileNotFoundError(f"{folder} is not a folder. Please give an argument for `folder`.")
+            folder = Folder(folder)
+        elif isinstance(folder, str):
+            folder = Folder(folder)
+            if not folder.path.exists():
+                raise FileNotFoundError(f"`{folder}` does not exist. Please make sure you enter a valid path.")
+        # a regular folder type would be okay - might need to add a final check to make it more robust
         self._folder = folder
-        if isinstance(folder, str):
-            self._folder = Folder(folder)
+        """The folder path where the Pipeline will search"""
 
-        # Adding some context on the report that have been run in the pipeline
-        # Updates when get_worksheet() gets updated and run
+        self.report_name_validation_pairs: dict[str: ValidationType] = dict()
+        """`Report Name: Validation` key-value pairs used for running the checks and keeping the context
+        of which report to run with which validation. These have a one-to-one relationship, even
+        if some of the reports have a common validation set.
+        
+        Used when you want to run functions available in the Validation object like Error Logs.
+        """
+
+        self.report_name_results_pairs: dict[str: pd.DataFrame] = dict()
+        """`Report Name: Validation Results (dataframe)` key-value pairs used for storing the results of the 
+        validation checks. These also have a one-to-one relationships, where one Report is tied to a
+        single results Dataframe.
+        
+        Used when you want to get a DataFrame with True / False and a key (if Key Column was given)
+        """
+
+        self.report_name_report_pairs: dict[str: ReportType] = dict()
+        """`Report Name: Report` key-value pairs used for storing the initialized Report object.
+         These also have a one-to-one relationships, where one Report is tied to a single Report object.
+         
+        Used when you want to used Report object functions, like reversals or the formatted report. 
+        """
+
         self._df: pd.DataFrame | None = None
         """adds context so that the pipeline can pull again without having to rerun the function
         
         value gets updated when `get_worksheet()` parameter `keep_df_context` is set to True
         """
 
-        self._report: ReportType | None = report
-        """keeps the context of the last Report that went through the pipeline
-        
-        value gets updated when `get_worksheet()` parameter `keep_report_context` is set to True
-        """
-
-        self._validation: ValidationType | None = validation
-        """keeps context of the last Validation that went through the pipeline
-        
-        """
-
     def __repr__(self):
         return f"Pipeline<folder: {self._folder.path}>"
 
-    def get_worksheet(
+    def add_report_set(
             self,
-            worksheet_name: str | None = None,
-            df: pd.DataFrame | None = None,
-            report: ReportType | None = None,
-            keep_report_context: bool = True,
-            keep_df_context: bool = True
-    ) -> pd.DataFrame:
-        """creates a dataframe with the file that follows the `worksheet_name` naming convention
-
-        The function searches for the file in the `self.folder`, where you set on the class instantiation.
-        Feel free to update the parameters to make it more customizable in the future, like making
-        use of the recursion.
-
-        Formats the report based on the `format()` function inside TypeReport. If no `report` argument
-        is given, then the function will keep the raw format
-
-        Parameters:
-            :param worksheet_name: naming convention of the worksheet you want to pull into the pipeline
-
-            :param df: an optional dataframe if you want to give the pipeline a DF without using keywords
-
-            :param report: (TypeReport) has the report information and metadata for formatting
-
-            :param keep_report_context: (bool) set to True to save the `report` argument in the object
-
-            :param keep_df_context: (bool) set to True to save the `df` argument in the object
-        """
-        if worksheet_name is None:
-            if df is not None:
-                df = df.copy()
-            elif report is not None:
-                df = self._folder.open_recent(report.name_convention)
-            elif self._report is not None:
-                df = self._folder.open_recent(self._report.name_convention)
-            elif self._df is not None:
-                df = self._df.copy()
-            else:
-                raise ValueError("Need a worksheet_name if report not given on Pipeline init.")
-        else:  # worksheet_name is given
-            df = self._folder.open_recent(worksheet_name)
-
-        # Handling if report argument was given
-        if report is not None:  # report arg is given
-            if keep_report_context:
-                self._report = report
-        else:  # report is arg not given
-            if self._report is not None:  # previous context was kept
-                report = self._report
-
-        if report is not None:
-            df = report.format(df)
-
-        # Handling the context if keep_df_context is set
-        if keep_df_context:
-            self._df = df
-        return df
-
-    def run_validation(
-            self,
+            report: ReportType,
             validation: ValidationType,
             *,
+            normalize_cash_columns: bool = False,
+            drop_duplicate_columns: bool = False,
             key_column: str | None = None,
-            infer_shared: bool = True
+            field_mapping: dict[str, str] | None = None,
+            infer_shared: bool = True,
     ):
-        try:
-            df = self._df.copy()
-        except AttributeError:
-            if self._report is None:
-                raise AttributeError(
-                    f"Will need to run Pipeline.get_worksheet() or "
-                    f"use a Report as an argument in Pipeline init."
-                )
-            # Rerunning with report context
-            df = self.get_worksheet(
-                self._report.name_convention,
-                report=self._report,
-                keep_df_context=False,
-                keep_report_context=True
+        # ==== i) initialize the report object and run the checks if True ====
+        # we currently need to do this because Report requires that the values be formalized
+        _df = self._folder.open_recent(report.name_convention)
+        report.format(
+            df=_df,
+            normalize_cash_columns=normalize_cash_columns,
+            drop_duplicated_columns=drop_duplicate_columns
+        )
+
+        # ==== ii) get the results, which also inits the Validation object ====
+        _results = validation.run(
+            df=_df,
+            key_column=key_column,
+            field_mapping=field_mapping,
+            infer_shared=infer_shared
+        )
+
+        # ==== iii) add to current context after init ====
+        self.report_name_validation_pairs[report.name_convention] = validation
+        self.report_name_results_pairs[report.name_convention] = _results
+
+    def run_error_log(
+            self,
+            report_name: str | None = None,
+    ):
+        """runs the error log from the Validation object
+
+        :param report_name: if given, will only return the Error Log of that report. All results as a list if None.
+        :return:
+        """
+        if not self.report_name_validation_pairs:
+            raise IndexError(
+                f"No report-validation pairs were given. Please initialize with the `add_report_set` method."
             )
-        return validation.run(df, key_column=key_column, infer_shared=infer_shared)
+
+        # ==== run the Error Log function from the Validation Dictionary ====
+        # I'm thinking I'm going to concat these, let's see how they turn out
+        if report_name is None:
+            _results = None
+            for report, validation in self.report_name_validation_pairs.items():
+                if _results is None:
+                    _results = validation.generate_error_log()
+                    continue
+                _result = validation.generate_error_log()
+                _results = pd.concat((_results, _result))
+            return _results
+        if report_name not in self.report_name_validation_pairs:
+            raise KeyError(
+                f"Report name `{report_name}` does not exist. Please make sure you enter a valid report name."
+            )
+        return self.report_name_validation_pairs[report_name].generate_error_log()

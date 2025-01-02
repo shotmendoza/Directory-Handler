@@ -27,6 +27,16 @@ def single_stock_df() -> pd.DataFrame:
     return pd.DataFrame.from_dict(data).copy()
 
 
+def single_stock_df_b() -> pd.DataFrame:
+    """a pretty standard dataframe for our use case."""
+    data = {
+        "id": [0, 1, 2, 3, 4, 5],
+        "appl_gross_income": [112, 160, 563, 345, 543, 235],
+        "appl_expenses": [25, 20, 40, 30, 35, 45],
+    }
+    return pd.DataFrame.from_dict(data).copy()
+
+
 def two_stock_df() -> pd.DataFrame:
     data = {
         "id": [0, 1, 2, 3, 4, 5],

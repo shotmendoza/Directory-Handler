@@ -1,7 +1,8 @@
 import pytest
 
-from dirlin.pipeline import Check, Validation
-from test.test_pipelines.test_pipeline_fixtures import single_stock_df, std_check_function, two_stock_df
+from dirlin.pipeline import Check, Validation, Report, Pipeline
+from test.test_pipelines.test_pipeline_fixtures import single_stock_df, std_check_function, two_stock_df, \
+    single_stock_df_b
 
 _shared_param_with_single_field = single_stock_df, std_check_function
 """testing class aims to test use cases where a test function has a shared parameter,
@@ -41,3 +42,27 @@ def test_pipeline_validation_workflow(data, check):
     result = validation.run(df, infer_shared=True)
     el = validation.generate_error_log()
     assert result is not None
+
+
+def test_pipeline_workflow():
+    """the aim of this test is to confirm that the Pipeline has a good workflow
+
+    """
+    # can probs be a fixture, but creating the Validation
+    check1 = Check(std_check_function)
+    validation = Validation([check1])
+
+    # same, could be fixtures, but creating Report
+    report1 = Report(df=single_stock_df())
+    report2 = Report(df=single_stock_df_b)
+
+    # Testing new pipeline api
+    pipeline = Pipeline()
+
+    pipeline.add_report_set(
+        report=report1, validation=validation
+    )
+
+    pipeline.add_report_set(
+        report=report2, validation=validation
+    )

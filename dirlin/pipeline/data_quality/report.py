@@ -12,15 +12,26 @@ class Report:
     """
     def __init__(
             self,
-            name_convention: str,
-            field_mapping: dict[str, str],
+            name_convention: str | None = None,
+            field_mapping: dict[str, str] | None = None,
             *,
+            df: pd.DataFrame | None = None,
             column_type_floats: list[str] | None = None,
             column_type_ints: list[str] | None = None,
             column_type_dates: list[str] | None = None,
             column_type_cash: list[str] | None = None,
             key_cash_column: str | None = None,
     ):
+        """sets up a Report to prep for formatting the report
+
+        :param name_convention:
+        :param field_mapping: used for renaming the columns in the report
+        :param column_type_floats:
+        :param column_type_ints:
+        :param column_type_dates:
+        :param column_type_cash:
+        :param key_cash_column:
+        """
         # Naming convention for the Report you want to pull
         self.name_convention = name_convention
 
@@ -32,11 +43,14 @@ class Report:
         self._cash_columns = column_type_cash
         self._key_cash_column = key_cash_column  # used in conjunction with cash columns to tie out signature
 
-        self._df: pd.DataFrame | None = None
+        if field_mapping is None:
+            self.field_mapping = {}
+
+        self.df = df
 
     def format(
             self,
-            df: pd.DataFrame,
+            df: pd.DataFrame | None = None,
             *,
             normalize_cash_columns: bool = False,
             drop_duplicated_columns: bool = False
@@ -48,6 +62,10 @@ class Report:
         :param drop_duplicated_columns: whether to drop duplicated columns
         :return: formatted dataframe
         """
+        if df is None:
+            if self.df is None:
+                raise ValueError(f"No dataframe reference. Must be given in the class init or parameter in function.")
+            df = self.df.copy()
 
         # Normalizing the column names for data cleaning later in the formatting process
         working_df = df.rename(columns=self.field_mapping).copy()
@@ -115,8 +133,7 @@ class Report:
             Should drop the column if duplicate name or naming convention is found in the report
             """
 
-        if not self._df:
-            self._df = working_df.copy()
+        self.df = working_df.copy()
         return working_df
 
     def flip_signature(self, signature_columns: list[str]) -> pd.DataFrame:
@@ -132,10 +149,10 @@ class Report:
         :param signature_columns: will go through the list and flip the signatures in this column
         :return: DataFrame with the required fields having flipped signatures
         """
-        if self._df is None:
+        if self.df is None:
             raise ValueError(
                 "Report.format() has not been run yet. Please run the method once to initialize self._df")
-        df = self._df.copy()
+        df = self.df.copy()
 
         for column in signature_columns:
             df[column] = df[column] * -1
