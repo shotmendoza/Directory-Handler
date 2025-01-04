@@ -7,9 +7,7 @@ from dirlin.pipeline.data_quality.report import ReportType
 
 
 class Pipeline:
-    """an object that allows for quick ETL and EDA process setups
-
-    """
+    """an object that allows for quick ETL and EDA process setups"""
     def __init__(
             self,
             folder: Folder | str | None = None,
