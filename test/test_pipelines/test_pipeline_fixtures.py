@@ -55,3 +55,17 @@ def std_check_function(stock_gross_income: Any, stock_expenses: Any) -> bool:
     if expected != net_income:
         return False
     return True
+
+
+def series_check_function(stock_gross_income: pd.Series, stock_expenses: pd.Series) -> pd.Series:
+    """trying to recreate some of the issues
+
+    :return:
+    """
+    results = []
+    for gi, e in zip(stock_gross_income, stock_expenses):
+        if gi - e == 140:
+            results.append(True)
+            continue
+        results.append(False)
+    return pd.Series(results)
