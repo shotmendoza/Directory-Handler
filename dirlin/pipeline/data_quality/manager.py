@@ -239,14 +239,6 @@ class Validation:
             ][0]
             for k, v in self._shared_param_column_map.items():
                 if len(v) != _max_shared_size:
-                    # assumes that if only 1 item in a list at the end, then it's using
-                    # a function that takes a shared param, but the specific report only
-                    # has one column that follows the naming convention
-                    if len(v) == 1:
-                        self._arg_map[k] = v[0]
-                        del self._shared_param_column_map[k]
-                        continue
-
                     _max_kw = set(
                         self._generate_base_name(column, kw_or_base=True)
                         for column in self._shared_param_column_map[_max_param]
@@ -259,6 +251,17 @@ class Validation:
                         f"{_max_shared_size}. Size of shared columns must match. "
                         f"Missing Columns: {_mismatched_parameters}"
                     )
+                if len(v) == 1:
+                    # assumes that if only 1 item in a list at the end, then it's using
+                    # a function that takes a shared param, but the specific report only
+                    # has one column that follows the naming convention
+                    self._arg_map[k] = v[0]
+                    continue
+            # We're unable to delete the keyword in the dictionary inside the loop, so
+            # we're deleting it out of shared parameters after it
+            for k in self._arg_map:
+                if k in self._shared_param_column_map:
+                    del self._shared_param_column_map[k]
         return None
 
     def _align_parameters(self, check: Check, df: pd.DataFrame):
@@ -285,6 +288,7 @@ class Validation:
                 kw = self._generate_base_name(list(parameter_set.values())[0], kw_or_base=True)
                 name = f"{check.name.strip('_')}_{kw}"
 
+                # tech debt? Or should I just code this portion as a separate function?
                 reverse_parameter_set = {v: k for k, v in parameter_set.items()}
                 temp_df = df.rename(columns=reverse_parameter_set)
                 r = temp_df[parameter_set.keys()].apply(lambda row: check.run(**row), axis=1)
@@ -293,9 +297,19 @@ class Validation:
                     result[name] = r[0]  # confirm this works, seems a little shakey
                 else:
                     result[name] = r
-        else:
+        else: # static args only
             check_name = check.name.strip('_')
-            result[check_name] = df[static_args.keys()].apply(lambda row: check.run(**row), axis=1)
+            if pd.Series in check.expected_arguments.values():
+                # could probably be faster, but fixed it
+                temp_args = dict()
+                for param, col_name in static_args.items():
+                    temp_args[param] = df[col_name]
+                result[check_name] = check.run(**temp_args)
+            else:
+                # tech debt? matches this one but with different parameter sets
+                reverse_parameter_set = {v: k for k, v in static_args.items()}
+                temp_df = df.rename(columns=reverse_parameter_set)
+                result[check_name] = temp_df[static_args.keys()].apply(lambda row: check.run(**row), axis=1)
 
         self.results = self.results | result
 
