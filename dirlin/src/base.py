@@ -103,6 +103,11 @@ class Folder:
         if not self.path.is_dir():
             raise ValueError(f"Expected a path to a folder / directory. Got {self.path}.")
 
+        # (8) wanted to add a way to get the path of open_recent
+        # adding the property here
+        self.path_open_recent: Path | None = None
+        """stores the most recent path used on self.open_recent or self.open_recent_as_document()"""
+
     def __repr__(self):
         return f"{self.path}"
 
@@ -222,8 +227,8 @@ class Folder:
         :param kwargs: named arguments for the DataFrame object
         :return: a DataFrame object
         """
-        most_recent_file = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
-        return self.open(most_recent_file, *args, **kwargs)
+        self.path_open_recent = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
+        return self.open(self.path_open_recent, *args, **kwargs)
 
     def open_recent_as_document(
             self,
@@ -243,8 +248,8 @@ class Folder:
         :param kwargs: keyword arguments for dataframe function
         :return: returns a Document object
         """
-        most_recent_file = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
-        return self.open_as_document(most_recent_file, *args, **kwargs)
+        self.path_open_recent = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
+        return self.open_as_document(self.path_open_recent, *args, **kwargs)
 
     def as_map(
             self,
