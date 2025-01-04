@@ -297,7 +297,7 @@ class Validation:
                     result[name] = r[0]  # confirm this works, seems a little shakey
                 else:
                     result[name] = r
-        else: # static args only
+        else:  # static args only
             check_name = check.name.strip('_')
             if pd.Series in check.expected_arguments.values():
                 # could probably be faster, but fixed it
