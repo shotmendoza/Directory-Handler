@@ -83,6 +83,7 @@ class Pipeline:
                 raise ValueError(f"`report.df` must be a Pandas dataframe. Got `{type(report.df)}`")
             _df = report.df.copy()
 
+        # ticket 11: this runs the formatting and stores it in the report.df property
         report.format(
             df=_df,
             normalize_cash_columns=normalize_cash_columns,
@@ -90,8 +91,9 @@ class Pipeline:
         )
 
         # ==== ii) get the results, which also inits the Validation object ====
+        # ticket 11: stores the formatted report with report.df
         _results = validation.run(
-            df=_df,
+            df=report.df,
             key_column=key_column,
             field_mapping=field_mapping,
             infer_shared=infer_shared
