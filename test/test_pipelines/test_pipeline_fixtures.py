@@ -48,6 +48,15 @@ def two_stock_df() -> pd.DataFrame:
     return pd.DataFrame.from_dict(data)
 
 
+def similar_field_name_df() -> pd.DataFrame:
+    data = {
+        "id": [0, 1, 2, 3, 4, 5],
+        "tsm_gross_income": [150, 160, 170, 180, 190, 200],
+        "total_gross_income": [25, 20, 40, 30, 35, 45],
+    }
+    return pd.DataFrame.from_dict(data)
+
+
 def std_check_function(stock_gross_income: Any, stock_expenses: Any) -> bool:
     """"""
     expected = 140
@@ -64,6 +73,16 @@ def series_check_function(stock_gross_income: pd.Series, stock_expenses: pd.Seri
     """
     results = []
     for gi, e in zip(stock_gross_income, stock_expenses):
+        if gi - e == 140:
+            results.append(True)
+            continue
+        results.append(False)
+    return pd.Series(results)
+
+
+def same_name_check(total_gross_income: pd.Series, carrier_gross_income: pd.Series):
+    results = []
+    for gi, e in zip(total_gross_income, carrier_gross_income):
         if gi - e == 140:
             results.append(True)
             continue

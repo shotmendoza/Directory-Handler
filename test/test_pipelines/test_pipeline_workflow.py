@@ -2,7 +2,7 @@ import pytest
 
 from dirlin.pipeline import Check, Validation, Report, Pipeline
 from test.test_pipelines.test_pipeline_fixtures import single_stock_df, std_check_function, two_stock_df, \
-    single_stock_df_b, series_check_function
+    single_stock_df_b, series_check_function, same_name_check, similar_field_name_df
 
 _shared_param_with_single_field = single_stock_df, std_check_function
 """testing class aims to test use cases where a test function has a shared parameter,
@@ -86,6 +86,21 @@ def test_pipeline_workflow_series_function():
 
     pipeline.add_report_set(
         report=report2, validation=validation
+    )
+
+    y = pipeline.run_error_log()
+    print(y)
+
+
+def test_pipeline_workflow_similar_param_name():
+    check1 = Check(same_name_check)
+    validation = Validation([check1])
+
+    report1 = Report(df=similar_field_name_df())
+
+    pipeline = Pipeline()
+    pipeline.add_report_set(
+        report=report1, validation=validation
     )
 
     y = pipeline.run_error_log()
