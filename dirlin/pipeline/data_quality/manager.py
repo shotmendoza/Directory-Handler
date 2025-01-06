@@ -1,4 +1,4 @@
-from typing import TypeVar
+from typing import TypeVar, Any
 
 import pandas as pd
 
@@ -102,12 +102,12 @@ class Validation:
 
         _df_columns: pd.Index = df.columns
         """an index or list of column names in the given dataframe"""
-
         # related to ticket #5 keeping this as a property, but resetting on `run()` function
         self._shared_param_column_map: dict[str, list] = dict()
 
         # ==== collection check function data ====
         for check in self.checks_performed:
+            # (!) This portion is what we are cleaning
             self._infer_param_class(check, _df_columns)  # map parameter to columns (creates shared, static params)
             self._align_parameters(check, df)  # ties the parameter to the columns and runs the checks
 
@@ -259,10 +259,41 @@ class Validation:
                     continue
             # We're unable to delete the keyword in the dictionary inside the loop, so
             # we're deleting it out of shared parameters after it
-            for k in self._arg_map:
-                if k in self._shared_param_column_map:
-                    del self._shared_param_column_map[k]
+            self._check_and_remove_static_in_shared_value()
+            self._convert_shared_to_static(shared_param_column_map=self._shared_param_column_map)
         return None
+
+    def _check_and_remove_static_in_shared_value(self):
+        """if a value has been deemed as a static parameter, then that static argument
+        should not be in a list of shared arguments.
+
+        This function will remove the static parameter from the shared one by identifying
+        the static values from `self._arg_map` inside the `self._shared_param_column_map`
+        and removing the value from `self._shared_param_column_map`
+        """
+        shared_values_mapping = {vv: k for k, v in self._shared_param_column_map.items() for vv in v}
+        for arg in self._arg_map.keys():
+            if arg in shared_values_mapping:
+                self._shared_param_column_map[shared_values_mapping[arg]].remove(arg)
+
+    def _convert_shared_to_static(self, shared_param_column_map: dict[str, Any]):
+        """takes a list with a single `Shared Parameter` and converts it into a Static Parameter
+        Transfer a value from `self._shared_param_column_map` to `self._static_arg`
+
+        Returns a list parameters that need to be deleted from the shared param column map
+        """
+        # (i) Check if it's "Eligible to become a Static arg from a Shared one"
+
+        # assumes that if only 1 item in a list at the end, then it's using
+        # a function that takes a shared param, but the specific report only
+        # has one column that follows the naming convention
+        shared_param_column_copy = shared_param_column_map.copy()
+        for parameter, potential_static_value in shared_param_column_copy.items():
+            if len(potential_static_value) == 1 and isinstance(potential_static_value, list):
+                if parameter not in self._arg_map:
+                    self._arg_map[parameter] = potential_static_value[0]
+                if parameter in self._shared_param_column_map:
+                    del self._shared_param_column_map[parameter]
 
     def _align_parameters(self, check: Check, df: pd.DataFrame):
         """Ties the `parameter: column` mapping (self.arg_map + self.shared_param_column_map) and runs the checks
@@ -294,6 +325,8 @@ class Validation:
                 r = temp_df[parameter_set.keys()].apply(lambda row: check.run(**row), axis=1)
 
                 if pd.Series in check.expected_arguments.values():
+                    temp_args = dict()
+                    combined_parameter_map = 0
                     result[name] = r[0]  # confirm this works, seems a little shakey
                 else:
                     result[name] = r
