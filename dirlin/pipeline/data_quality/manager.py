@@ -102,12 +102,12 @@ class Validation:
 
         _df_columns: pd.Index = df.columns
         """an index or list of column names in the given dataframe"""
-        # related to ticket #5 keeping this as a property, but resetting on `run()` function
-        self._shared_param_column_map: dict[str, list] = dict()
 
         # ==== collection check function data ====
         for check in self.checks_performed:
-            # (!) This portion is what we are cleaning
+            # related to ticket #5 keeping this as a property, but resetting on `run()` function
+            self._shared_param_column_map: dict[str, list] = dict()
+
             self._infer_param_class(check, _df_columns)  # map parameter to columns (creates shared, static params)
             self._align_parameters(check, df)  # ties the parameter to the columns and runs the checks
 
