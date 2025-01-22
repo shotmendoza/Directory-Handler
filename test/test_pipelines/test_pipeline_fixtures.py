@@ -1,7 +1,6 @@
 from typing import Any
 
 import pandas as pd
-import pytest
 
 """testing class aims to test use cases where a test function has a shared parameter,
 but the field in the DataFrame only has one field that is under the shared parameter.
