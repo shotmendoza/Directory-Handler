@@ -309,13 +309,13 @@ class Folder:
         df = None
         if recurse:
             files = [
-                f for f in self.path.glob(
+                f for f in self.path.rglob(
                     pattern=f"{asterisks_mapping[with_asterisks]}"
                 ) if not f.name.startswith("~") and not f.name.startswith(".")
             ]
         else:
             files = [
-                f for f in self.path.rglob(
+                f for f in self.path.glob(
                     pattern=f"{asterisks_mapping[with_asterisks]}"
                 ) if not f.name.startswith("~") and not f.name.startswith(".")
             ]
