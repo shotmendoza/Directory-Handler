@@ -1,371 +1,396 @@
-from typing import TypeVar, Any
+import inspect
+from typing import TypeVar, Any, Callable
 
 import pandas as pd
 
 from dirlin.pipeline.data_quality.check import Check, CheckType
 
 
-class Validation:
-    def __init__(
-            self,
-            check: CheckType | list[CheckType],
-            shared_param: list[str] | str | None = None,
-    ):
+# 2025.02.26 - creating new architecture for the quick pipeline
+# we're doing this to make setup easier since it got a little complicated
+# and time-consuming when onboarding new clients
+class BaseValidation:
+    """object used for Validation objects in order to help in reusing the same set of checks
+    over different reports.
 
-        """class for handling all the various checks
+    The class should be inherited by a base set of classes `BaseChecks(BaseValidation)`, where
+    the `BaseChecks` class has a defined set of checks.
 
-        :param check: the checks you want to run in the pipeline
-        :param shared_param: can denote parameters in the functions you expect are shared among multiple columns.
-        An example is if a check (function) takes `team_qb` as a parameter, but the dataframe has columns
-        like `raiders_qb` and `chiefs_qb` as columns. Argument `team_qb` would pull both columns as an arg.
-        """
-        if isinstance(check, Check):
-            check = [check,]
-        if not isinstance(check, list):
-            raise TypeError(f"Expected a list or Check object, but got {type(check)}")
+    The object inheriting BaseValidation class then uses the check function, `example_function = defined function`
+    """
 
-        #####################################
-        # check collection layer api (for pipeline return)
-        #####################################
+    alias_mapping: dict[str, list | str] | None = None
+    """used to define columns that don't exact-match a parameter in the object,
+    but we want to use as an argument in the parameter.
+    
+    Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
+    the function. The error code for `_verify_column_ties_to_parameter` will also notify
+    you to add missing parameters into this variable as a dict.
+    """
 
-        # ==== All ====
-        self.checks_performed = check  # confirmed
-        """List of all checks to perform for the validation"""
+    @classmethod
+    def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
+        # STEP 1: VALIDATE
+        # We want to validate that the class was set up correctly
+        # Also want to validate that the dataframe we are taking in is usable
+        cls._verify_alias_mapping(df=df)  # validates alias mapping is set up correctly
+        cls._verify_column_ties_to_parameter(df=df)  # validates that all parameters are accounted for
+        cls._verify_function_params_match()  # verifies that parameter types are uniform
 
-        # ==== Used to Create Arguments ====
-        self._shared_param_column_map: dict[str, list] = dict()  # confirmed
-        """`{parameter: list[column]}` key-value pairs of all the checks with shared parameters.
-        
-        I'm going to keep this a class property for now. I don't want to pass this value
-        all around when going through the checks. We'll restart the value at the beginning
-        of every `run()`
-        """
+        # STEP 2: GET THE MAPS WE NEED TO RUN THROUGH THE FUNCTIONS
+        # now we want to iterate through the checks, making sure we have the args we need
+        # we want to store the results in a flexible data type so that we can have many types of deliverables
+        function_name_to_args_mapping = cls._map_function_to_args(df)  # gives me the func_name and (param and arg) tup
+        function_mapping = cls._get_all_functions_in_class()
+        function_to_function_type_map = cls._map_function_to_function_type()
 
-        self._arg_map: dict[str, str] = dict()  # confirmed
-        """The static parameters with only one column that matches the parameter.
-        
-        The idea is that if the column and parameter have a one-to-one relationships, then
-        the arguments can be reused and extended with the `shared_param_column_map`.
-        
-        `{parameter: column}` key-value pairs with single column pairs. These are one-to-one relationships.
-        """
+        # STEP 3: RUN THE CHECKS
+        results = cls._process_function_with_args(
+            df,
+            function_map=function_mapping,
+            function_args=function_name_to_args_mapping,
+            function_type_map=function_to_function_type_map,
+            )
+        return results
 
-        self._option_map: dict[str, str] = dict()
-        """the parameters for options with the prefix `option` which denotes a setting in the check"""
-
-        #############################
-        # runtime variable layer (class functions)
-        #############################
-
-        # ==== All ====
-
-        # ==== properties from `infer_param_class` ====
-        # properties should hold information regarding the check
-
-        self._param_base_name_map: dict[str, str] | None = None
-        """used for finding shared parameters"""
-
-        self._shared_params: list[str] | list = shared_param if shared_param is not None else list()
-        """list of params given by the validation class when it knows which column is a shared param"""
-
-        self._flag_infer_shared_params: bool = False
-        """will be set to True if arg is given on function call or found"""
-
-        # ==== properties from 'run_check_validation` ====
-        self.results: dict[str, list] = dict()
-        """Final dictionary that represents the results of the checks"""
-
-        self.flag_run_processed: bool = False
-        """whether Validation.run() was ran. Marked True once it has run at  least once."""
-
-        self.key_column: str | None = None
-        """Used to store the key column if one was given"""
-
-    def run(
-            self,
+    @classmethod
+    def _process_function_with_args(
+            cls,
             df: pd.DataFrame,
             *,
-            key_column: str | None = None,
-            field_mapping: dict[str, str] | None = None,
-            infer_shared: bool = False
-    ) -> pd.DataFrame:
-        """function that handles running the Dataframe and the various checks
+            function_map: dict,
+            function_type_map: dict[str, bool],  # true is series
+            function_args: dict[str, list[tuple[str, dict]]],
 
-        Still in the very early stages, but will likely expand to handle different errors and checks
+    ) -> dict:
+        """identifies the type of function we are dealing with, and will run the
+        function and its arguments according to its needs. For example, a parameter of type pd.Series will
+        run differently than a function running based on float.
 
         """
-        # ===== handling function arguments and flags ====
-        if field_mapping is not None:
-            df = df.rename(columns=field_mapping)
-        if infer_shared:
-            self._flag_infer_shared_params = True
-
-        _df_columns: pd.Index = df.columns
-        """an index or list of column names in the given dataframe"""
-
-        # ==== collection check function data ====
-        for check in self.checks_performed:
-            # related to ticket #5 keeping this as a property, but resetting on `run()` function
-            self._shared_param_column_map: dict[str, list] = dict()
-
-            self._infer_param_class(check, _df_columns)  # map parameter to columns (creates shared, static params)
-            self._align_parameters(check, df)  # ties the parameter to the columns and runs the checks
-
-        # ==== Creating Final Deliverable from Run ====
-        if key_column is not None:
-            self.key_column = key_column
-            temp_key_dict = {key_column: df[key_column]}
-            self.results = self.results | temp_key_dict
-        temp_df = pd.DataFrame.from_dict(self.results)
-        self.flag_run_processed = True
-        return temp_df
-
-    def generate_base_results(self, key_column: str | None = None):
-        """"""
-        self._confirm_run_was_ran()
-
-    def generate_error_log(self):
-        """creates an error log based off the results of the Validation.run()
-
-        Will have the number of lines the check has validated, and the number of
-        errors that the check has found.
-
-        Results:
-                                              total_checked  errors
-            check
-            series_type_check_function_foobar             21       0
-            series_type_check_function_foo                21       0
-            series_type_check_function_bar                21       0
-
-
-        :return: The DataFrame of the Error Log
-        """
-        self._confirm_run_was_ran()
-
-        error_log = dict()
-        for check, result in self.results.items():
-            _error_count = len(result) - sum(result)
-            _total_validated = len(result)
-            error_log[check] = [_total_validated, _error_count]
-
-        error_log_df = pd.DataFrame.from_dict(error_log, orient='index')
-        error_log_df.columns = ['total_checked', 'errors']
-        error_log_df.index.names = ['check']
-        return error_log_df
-
-    def generate_fix_file(self):
-        """"""
-        self._confirm_run_was_ran()
-
-    def _confirm_run_was_ran(self):
-        if self.flag_run_processed is False:
-            raise RuntimeError(
-                f"Expected Validation.run() method to be run once. "
-                f"Please ensure it is before attempting to run the `generate` functions"
-            )
-
-    def _infer_param_class(self, check: Check, columns: pd.Index) -> None:
-        """determines whether a parameter is a shared parameter or a single parameter.
-
-        Adds `shared parameter` to self.shared_param_column_map and
-        `non-shared parameter` to self.non_shared_param_column_map.
-
-        A `shared parameter` has a one-to-many relationship between a single parameter
-        and a DataFrame column.
-
-        `Single parameters` have a one-to-one relationship between column names and
-        parameter names.
-        """
-        # ==== Pre-Check to see if we have given shared params ====
-        # Initialize the variables if base map was never initialized
-        _found_shared_param = None
-        """used for checking if a column is a shared parameter column"""
-
-        _column_base_name_map: dict[str, str] = dict()
-        """used for finding shared parameters"""
-
-        if self._shared_params:
-            _found_shared_param = any((p in self._shared_params for p in check.expected_arguments))
-
-        if _found_shared_param or self._flag_infer_shared_params:
-            if self._param_base_name_map is None:
-                self._param_base_name_map = dict()
-
-            for column in columns:
-                base_name = self._generate_base_name(column)
-                _column_base_name_map[column] = base_name
-
-            for arg in check.expected_arguments:
-                if arg in self._shared_params or self._flag_infer_shared_params:
-                    if arg not in self._param_base_name_map:
-                        param_base_name = self._generate_base_name(arg)
-                        self._param_base_name_map[arg] = param_base_name
-
-        # ==== categorize the params between shared and non-shared ====
-        # shared_param: {parameter_name: list[column names that share the parameter]}
-        # non_shared: {parameter_name: column name}
-        _missing_parameters = []
-        for param in check.expected_arguments:
-            match param in columns:
+        # in the future, this may be under the Check class
+        results = {}
+        for function_name, function in function_map.items():
+            param_args_list = function_args[function_name]
+            match function_type_map[function_name]:
                 case True:
-                    if param not in self._arg_map:
-                        self._arg_map[param] = param
-                case False:  # is a shared parameter field / 2024.12.26 or an Options parameter
-                    if self._flag_infer_shared_params or param in self._shared_params:
-                        for column in columns:
-                            # parameter nfl_qb matches column raiders_qb (qb == qb)
-                            if _column_base_name_map[column] == self._param_base_name_map[param]:
-                                if param not in self._shared_param_column_map:
-                                    self._shared_param_column_map[param] = list()
-                                    if not _found_shared_param:
-                                        _found_shared_param = True
-                                if column not in self._shared_param_column_map[param]:
-                                    self._shared_param_column_map[param].append(column)
-                    elif str(param).startswith('option_'):
-                        self._option_map[param] = param # need to figure out how to handle these
-                    else:
-                        _missing_parameters.append(param)
-        if _missing_parameters:
-            error = f"Couldn't find matching column for parameters: {_missing_parameters}."
-            if self._flag_infer_shared_params is False:
-                suggestion = f"Consider making setting `infer_shared` to `True`."
-                error = f"{error} {suggestion}"
-            raise ValueError(error)
-        if _found_shared_param:
-            _max_shared_size = max([len(self._shared_param_column_map[k]) for k in self._shared_param_column_map.keys()])
-            _max_param = [
-                param for param in self._shared_param_column_map.keys()
-                if len(self._shared_param_column_map[param]) == _max_shared_size
-            ][0]
-            for k, v in self._shared_param_column_map.items():
-                if len(v) != _max_shared_size:
-                    _max_kw = set(
-                        self._generate_base_name(column, kw_or_base=True)
-                        for column in self._shared_param_column_map[_max_param]
-                    )
-                    _short_kw = [self._generate_base_name(column, kw_or_base=True) for column in v]
-                    _mismatched_parameters = [kw for kw in _max_kw if kw not in _short_kw]
+                    temp = cls._process_function_as_series_function(function, df, param_args_list)
+                case _:
+                    temp = cls._process_function_as_scalar_function(function, df, param_args_list)
+            results = results | temp
+        return results
 
-                    raise IndexError(
-                        f"Length of shared parameter `{k}` ({len(v)}) != "
-                        f"{_max_shared_size}. Size of shared columns must match. "
-                        f"Missing Columns: {_mismatched_parameters}"
-                    )
-                if len(v) == 1:
-                    # assumes that if only 1 item in a list at the end, then it's using
-                    # a function that takes a shared param, but the specific report only
-                    # has one column that follows the naming convention
-                    self._arg_map[k] = v[0]
-                    continue
-            # We're unable to delete the keyword in the dictionary inside the loop, so
-            # we're deleting it out of shared parameters after it
-            self._check_and_remove_static_in_shared_value()
-            self._convert_shared_to_static(shared_param_column_map=self._shared_param_column_map)
-        return None
+    @classmethod
+    def _process_function_as_series_function(
+            cls,
+            function: Callable,
+            df: pd.DataFrame,
+            args_list: list[tuple[str, dict]]
+    ) -> dict:
+        """processes the class function assuming every parameter has a pd.Series as the param type
 
-    def _check_and_remove_static_in_shared_value(self):
-        """if a value has been deemed as a static parameter, then that static argument
-        should not be in a list of shared arguments.
+        :param function: function to run the args on
+        :param df: the dataframe to run the args on
+        :param args_list: a list of argument params
 
-        This function will remove the static parameter from the shared one by identifying
-        the static values from `self._arg_map` inside the `self._shared_param_column_map`
-        and removing the value from `self._shared_param_column_map`
+        :return: dict
         """
-        shared_values_mapping = {vv: k for k, v in self._shared_param_column_map.items() for vv in v}
-        for arg in self._arg_map.keys():
-            if arg in shared_values_mapping:
-                self._shared_param_column_map[shared_values_mapping[arg]].remove(arg)
-
-    def _convert_shared_to_static(self, shared_param_column_map: dict[str, Any]):
-        """takes a list with a single `Shared Parameter` and converts it into a Static Parameter
-        Transfer a value from `self._shared_param_column_map` to `self._static_arg`
-
-        Returns a list parameters that need to be deleted from the shared param column map
-        """
-        # (i) Check if it's "Eligible to become a Static arg from a Shared one"
-
-        # assumes that if only 1 item in a list at the end, then it's using
-        # a function that takes a shared param, but the specific report only
-        # has one column that follows the naming convention
-        shared_param_column_copy = shared_param_column_map.copy()
-        for parameter, potential_static_value in shared_param_column_copy.items():
-            if len(potential_static_value) == 1 and isinstance(potential_static_value, list):
-                if parameter not in self._arg_map:
-                    self._arg_map[parameter] = potential_static_value[0]
-                if parameter in self._shared_param_column_map:
-                    del self._shared_param_column_map[parameter]
-
-    def _align_parameters(self, check: Check, df: pd.DataFrame):
-        """Ties the `parameter: column` mapping (self.arg_map + self.shared_param_column_map) and runs the checks
-        on the pd.Series by aligning the parameter to the pd.Series argument
-
-        """
-        # ==== creates the 'parameter: column' mapping ====
-        static_args = {kw: self._arg_map[kw] for kw in check.expected_arguments if kw in self._arg_map}
-        shared_args = {
-            kw: self._shared_param_column_map[kw]
-            for kw in check.expected_arguments if kw in self._shared_param_column_map
+        # We need this because arg list only gives you the field name and doesn't tie it to an existing DF
+        deliverable = {}
+        new_keys = {
+            args_tuple[0]: {
+                param: df[column] for param, column in args_tuple[1].items()
+            } for args_tuple in args_list
         }
 
-        # ==== creates the `parameter: column` mapping for shared parameters ====
-        # Further breaks down the shared parameter in a list of dictionary "sets" by splitting
-        # We do this by splitting the shared args into different combinations
-        shared_param_combos = [dict(zip(shared_args.keys(), values)) for values in zip(*shared_args.values())]
-        combined_parameter_sets = [shared_combo | static_args for shared_combo in shared_param_combos]
+        for ref_name, args in new_keys:
+            results = function(**args)
+            deliverable[ref_name] = results
+        return deliverable
 
-        result = {}
-        if shared_args:
-            for parameter_set in combined_parameter_sets:
-                kw = self._generate_base_name(list(parameter_set.values())[0], kw_or_base=True)
-                name = f"{check.name.strip('_')}_{kw}"
+    @classmethod
+    def _process_function_as_scalar_function(
+            cls,
+            function: Callable,
+            df: pd.DataFrame,
+            args_list: list[tuple[str, dict]]
+    ) -> dict:
+        """processes the class function assuming every parameter has a scalar as the param type
 
-                # tech debt? Or should I just code this portion as a separate function?
-                reverse_parameter_set = {v: k for k, v in parameter_set.items()}
-                temp_df = df.rename(columns=reverse_parameter_set)
-                r = temp_df[parameter_set.keys()].apply(lambda row: check.run(**row), axis=1)
+        :param function: function to run the args on
+        :param df: the dataframe to run the args on
+        :param args_list: a list of argument params
 
-                if pd.Series in check.expected_arguments.values():
-                    temp_args = dict()
-                    combined_parameter_map = 0
-                    result[name] = r[0]  # confirm this works, seems a little shakey
-                else:
-                    result[name] = r
-        else:  # static args only
-            check_name = check.name.strip('_')
-            if pd.Series in check.expected_arguments.values():
-                # could probably be faster, but fixed it
-                temp_args = dict()
-                for param, col_name in static_args.items():
-                    temp_args[param] = df[col_name]
-                result[check_name] = check.run(**temp_args)
-            else:
-                # tech debt? matches this one but with different parameter sets
-                reverse_parameter_set = {v: k for k, v in static_args.items()}
-                temp_df = df.rename(columns=reverse_parameter_set)
-                result[check_name] = temp_df[static_args.keys()].apply(lambda row: check.run(**row), axis=1)
+        :return: dict
+        """
+        deliverable = {}
+        for args in args_list:
+            temp = df[list(args[1].values())].copy()  # should be column names
+            results = function(**temp.to_dict(orient="series"))
+            deliverable[args[0]] = results
+        return deliverable
 
-        self.results = self.results | result
-
-    @staticmethod
-    def _generate_base_name(field: str, kw_or_base: bool = False) -> str | None:
-        """used for generating the string base to match for shared params
-
-        If kw_or_base is set to `True`, will return the keyword. If set to
-        `False`, will return the base string. Defaults to `False`.
-
-        Returns None if column name is not able to be split. This would make it
-        ineligible to be a shared parameter column name.
+    @classmethod
+    def _format_flatten_parameters(cls, one_to_many_param: dict) -> list[dict]:
+        """used when ONE parameter has MANY columns associated with it, this function will convert
+        a nested list inside a dictionary, into a list of dictionaries with a key-value pair of
+        `parameter: column_name`
 
         """
-        try:
-            kw, base_name = str(field).split('_', maxsplit=1)
-        except ValueError:
-            return None
-        if kw_or_base is False:
-            return base_name
-        return kw
+        flattened_params_combo = [
+            dict(zip(one_to_many_param.keys(), values)) for values in zip(*one_to_many_param.values())
+        ]
+        return flattened_params_combo
 
+    @classmethod
+    def _format_args_reference_names(cls, arg_set: dict[str, str]) -> str:
+        """need this function in order to accept the argument from `map_function_to_args`.
+        This function allows us to reference the different arguments when we use the `run_validation` function.
+        Having a reference point allows us to create different variations of a final deliverable.
+        For example, we want to show check_a_v1: 100 errors, check_a_v2: 10 errors. This function creates the
+        `check_a_v1` and `check_a_v2` reference names.
 
-ValidationType = TypeVar('ValidationType', bound=Validation)
-"""Object type Validation
-"""
+        :param arg_set: the argument set we are going to use for a given function, likely comes from the
+        `map_function_to_args` function.
+
+        :return: a formatted reference name
+        """
+        cleaned_string = "_".join((cls._format_column_names(column_name) for column_name in arg_set.values()))
+        return cleaned_string
+
+    @classmethod
+    def _format_column_names(cls, name: str) -> str:
+        """function for cleaning a column name. Can add onto this to cover more edge cases in the future.
+
+        :param name: the column name or the string we want to format to make it Python friendly
+        :return: a cleaned column name
+        """
+        name = name.strip("-").lower().replace(" ", "_")
+        return name
+
+    @classmethod
+    def _map_function_to_args(cls, df: pd.DataFrame) -> dict[str, list[tuple[str, dict]]]:
+        """identifies whether a param has a one-to-one or a one-to-many relationship with a column.
+        Once identified, will flatten fields with a one-to-many, and will create a list of
+        function args. Keeps in context of the check that the parameters are under to ensure
+        that the arg dicts we made tie out correctly to the function. This is important so that the
+        function argument list does not have a parameter that is not associated with the function.
+
+        :return: a dictionary with key-value pairs of {`check`: [(`ref1`, {p1: c1, p2: c2, ...}),], ...}
+        """
+        check_mapping = cls._get_function_param_and_type()
+        param_mapping = cls._map_param_to_columns(df)
+        deliverable = {}
+
+        for check, param_set in check_mapping.items():
+            # STEP 1 is to categorize whether the param has a one-to-one or one-to-many relationship
+            # We do this by comparing the length of the field list we have from the `get param column mapping` func
+            one_to_one = {}
+            one_to_many = {}
+            for param, fields in param_mapping.items():
+                if param in param_set:  # if this param is part of the check
+                    if len(fields) == 1:  # only one field associated with the param. Previously known as static
+                        one_to_one[param] = fields[0]
+                    elif len(fields) > 1:
+                        one_to_many[param] = fields
+                    # ZERO param args should be caught in `verify_column_ties_to_param`
+
+            # STEP 2 is to flatten out the parameter-column mapping for one-to-many relationships
+            # we do this so that we can iterate on the parameters that can take in different columns
+            # if we have stock_a_price and stock_b_price with stock_price as the parameter
+            # we want to be able to use both stock_a and stock_b with the other parameters in the function
+
+            # NOTE: realized that if I want to reference the params being used in the final deliverable,
+            # NOTE cont: I need to be able to create a dict instead of a list to so that I can reference
+            # NOTE cont: the changed parameter names
+            flat_one_to_many = cls._format_flatten_parameters(one_to_many)
+            arg_sets: list[dict] = [one_to_many_args | one_to_one for one_to_many_args in flat_one_to_many]  # the args
+            deliverable[check] = [
+                (cls._format_args_reference_names(args), args) for args in arg_sets
+            ]
+        return deliverable
+
+    @classmethod
+    def _map_param_to_columns(cls, df: pd.DataFrame) -> dict[str, Any]:
+        """creates the actual mapping between the parameter and the columns associated with it,
+        `_get_all_params_in_class` ties out the alias to the parameters. This class then goes
+        one step further by adding any columns that match the name of the parameter.
+
+        :param df: the dataframe we want to use
+        :return: dictionary with key-value pair of `{parameter: [column, alias]}`
+        """
+        params = cls._get_all_params_in_class()
+        param_column_mapping = {
+            param: [column,] if alias_names is None and param == column
+            else alias_names.append(column) if param == column and isinstance(alias_names, list)
+            else alias_names
+            for param, alias_names in params.items() for column in df.columns.values
+        }
+        return param_column_mapping
+
+    @classmethod
+    def _map_function_to_function_type(cls) -> dict[str, bool]:
+        """creates a mapping so that we can tell the type of function we are dealing with.
+        For example, currently, we are trying to figure out if the function uses a pd.Series type params
+        or if it uses scalar values (float, int, etc.) as arg types. We can't have both.
+
+        {`check`: `True` if series-based, `False` if scalar}
+
+        """
+        deliverable = {}
+        for check, args in cls._get_function_param_and_type().items():
+            _has_series_type = False
+            _has_scalar_type = False
+            for param, p_type in args.items():
+                if isinstance(p_type, pd.Series):
+                    _has_series_type = True
+                elif isinstance(p_type, pd.DataFrame):
+                    raise NotImplementedError(
+                        f"We currently do not support Dataframes as a check argument."
+                        f" Please update the check function to include either on pd.Series, list-like, or scalar values"
+                    )
+                else:  # we're going to assume single values for now and not lists. Those will error out for now.
+                    _has_scalar_type = True
+            if _has_series_type and _has_scalar_type:
+                raise ValueError(f"The function cannot have both a scalar parameter and a series parameter."
+                                 f" Please update the function to include one or the other, but not both")
+            if _has_scalar_type:
+                deliverable[check] = False
+            else:
+                deliverable[check] = True
+        return deliverable
+
+    @classmethod
+    def _get_function_param_and_type(cls) -> dict:
+        """private helper function used to get the class function's parameters and its associated type
+
+        :return: a dictionary of `check: {parameter: Type, ...}` for all functions defined in the subclass.
+        """
+        _function_params = {
+            check_name: {
+                parameter: t for parameter, t in inspect.get_annotations(function) if parameter not in ('return',)
+            } for check_name, function in cls._get_all_functions_in_class().items()
+        }
+        return _function_params
+
+    @classmethod
+    def _get_all_functions_in_class(cls) -> dict:
+        """private helper function used to get a mapping of the check function name and the check function.
+        Helpful when iterating through all the check functions in the class.
+
+        The idea is to iterate through this dictionary in order to run all the defined functions in the
+        super class.
+
+        :return: a dictionary key-value pair of `check_name: check_function`
+        """
+        base_functions = {
+            check: function for check, function in cls.__base__.__dict__.items() if inspect.isfunction(function)
+        }
+        curr_functions = {
+            check: function for check, function in cls.__dict__.items() if inspect.isfunction(function)
+        }
+        return base_functions | curr_functions
+
+    @classmethod
+    def _get_all_params_in_class(cls) -> dict:
+        """private helper function used to flatten the `get_function_param()` dictionary
+        and return a dictionary of all parameters in the class. Helps to map columns to
+        a parameter that's in the class
+
+        This function flattens out all the parameters used in the super object, meaning, each
+        parameter from all the functions are pulled into one dictionary.
+
+        This will likely be used to tie out the parameters to different columns. Includes alias mapping.
+
+        :return: a dictionary with a key-value pair of `parameter: list[column] | None` for all parameters in the class,
+        taking into account all the functions in the class
+        """
+        all_params = {}
+        for check_name, params in cls._get_function_param_and_type().items():
+            for param in params:
+                if param not in all_params:  # don't want to overwrite previous param
+                    all_params[param] = None
+                    # can delete if it's adding a layer of dependency we don't want
+                    if param in cls.alias_mapping:  # adding the user defined param-column pairing
+                        all_params[param] = cls.alias_mapping[param]
+        return all_params
+
+    @classmethod
+    def _verify_column_ties_to_parameter(cls, df: pd.DataFrame) -> bool:
+        """verifies that all the parameters in the super class has atleast one associated column
+        tied to it.
+
+        If that check fails, it will raise an error, and will notify the user to add the column
+        to the `alias_mapping` variable so that is ties to the parameter it's missing,
+        or to remove the function altogether if it's irrelevant.
+        """
+        column_mapping = {column: False for column in df.columns.to_list()}
+        params = cls._get_all_params_in_class()
+
+        # Tying Out the Columns
+        missing_params = []
+        for param, args in params.items():
+            try:
+                column_mapping[param] = True
+            except KeyError:
+                if args is None:  # because `get_all_params_in_class` will make the value a list from alias or None
+                    missing_params.append(param)
+        if missing_params:
+            raise KeyError(
+                f"Missing columns: {missing_params}. Declare the columns associated with the missing parameters"
+                f" inside the `alias_mapping variable`."
+            )
+        return True
+
+    @classmethod
+    def _verify_alias_mapping(cls, df: pd.DataFrame) -> bool:
+        """verifies that alias mapping was properly defined and usable.
+
+        :param df: the dataframe we are using to tie to the Validation object
+        :return: True if the alias mapping was properly defined and usable, raises an error otherwise
+        """
+        columns = {column: False for column in df.columns.to_list()}
+
+        invalid_field_names = []
+        for param in cls.alias_mapping:
+            param_results = []
+            for arg in cls.alias_mapping[param]:
+                try:
+                    columns[arg] = True
+                    param_results.append(True)
+                except KeyError:
+                    param_results.append(False)
+            if not any((result for result in param_results)):  # because none of the fields we defined are in the df
+                invalid_field_names.append(param)
+
+        if invalid_field_names:
+            raise KeyError(
+                f"{invalid_field_names} were not in the dataframe. "
+                f"Please update the `alias_mapping` variable with the correct field names."
+            )
+        return True
+
+    @classmethod
+    def _verify_function_params_match(cls) -> bool:
+        """want to make sure if one param is of type series, then another param matches, and should not be a
+        scalar value
+
+        :return:
+        """
+        for check, check_args in cls._get_function_param_and_type().items():
+            _has_series_type = False
+            _has_scalar_type = False
+            for param, p_type in check_args.items():
+                if isinstance(p_type, pd.Series):
+                    _has_series_type = True
+                elif isinstance(p_type, pd.DataFrame):
+                    raise NotImplementedError(
+                        f"We currently do not support Dataframes as a check argument."
+                        f" Please update the check function to include either on pd.Series, list-like, or scalar values"
+                    )
+                else:  # we're going to assume single values for now and not lists. Those will error out for now.
+                    _has_scalar_type = True
+            if _has_series_type and _has_scalar_type:
+                raise ValueError(f"The function cannot have both a scalar parameter and a series parameter."
+                                 f" Please update the function to include one or the other, but not both")
+        return True
