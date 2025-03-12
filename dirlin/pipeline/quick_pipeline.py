@@ -2,7 +2,6 @@
 import pandas as pd
 
 from dirlin import Folder, Path
-from dirlin.pipeline.data_quality.manager import ValidationType
 from dirlin.pipeline.data_quality.report import ReportType
 
 

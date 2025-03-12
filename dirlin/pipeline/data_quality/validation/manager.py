@@ -1,9 +1,7 @@
 import inspect
-from typing import TypeVar, Any, Callable
+from typing import Any, Callable
 
 import pandas as pd
-
-from dirlin.pipeline.data_quality.check import Check, CheckType
 
 
 # 2025.02.26 - creating new architecture for the quick pipeline
@@ -19,9 +17,14 @@ class BaseValidation:
     The object inheriting BaseValidation class then uses the check function, `example_function = defined function`
     """
 
-    alias_mapping: dict[str, list | str] | None = None
+    alias_mapping: dict[str, list | str] | None = dict()
     """used to define columns that don't exact-match a parameter in the object,
     but we want to use as an argument in the parameter.
+    
+    For example, if we have a column `Total Price` but our test function uses `price`
+    as the parameter of the function, we would add `Total Price` as the value under
+    `price` in the alias_mapping key-value pair. This would look like this:
+    `{"price": ["Total Price]"}`.
     
     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
     the function. The error code for `_verify_column_ties_to_parameter` will also notify
@@ -30,27 +33,24 @@ class BaseValidation:
 
     @classmethod
     def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
-        # STEP 1: VALIDATE
-        # We want to validate that the class was set up correctly
-        # Also want to validate that the dataframe we are taking in is usable
+        # STEP 1: VALIDATE to validate that the class was set up correctly and is usable (GLOBAL)
         cls._verify_alias_mapping(df=df)  # validates alias mapping is set up correctly
         cls._verify_column_ties_to_parameter(df=df)  # validates that all parameters are accounted for
         cls._verify_function_params_match()  # verifies that parameter types are uniform
+        cls._verify_function_param_return_match()  # need input for the type of func param
 
-        # STEP 2: GET THE MAPS WE NEED TO RUN THROUGH THE FUNCTIONS
-        # now we want to iterate through the checks, making sure we have the args we need
-        # we want to store the results in a flexible data type so that we can have many types of deliverables
+        # STEP 2: INITIALIZE to create all the maps, to prepare for running the checks
         function_name_to_args_mapping = cls._map_function_to_args(df)  # gives me the func_name and (param and arg) tup
-        function_mapping = cls._get_all_functions_in_class()
-        function_to_function_type_map = cls._map_function_to_function_type()
+        function_mapping = cls._get_all_functions_in_class()  # gives me each function to iterate through
+        function_to_function_type_map = cls._map_function_to_function_type()  # gives me the function type (param?)
 
         # STEP 3: RUN THE CHECKS
         results = cls._process_function_with_args(
-            df,
-            function_map=function_mapping,
+            df, function_map=function_mapping,
             function_args=function_name_to_args_mapping,
-            function_type_map=function_to_function_type_map,
-            )
+            function_type_map=function_to_function_type_map
+        )
+        print("Hello World")
         return results
 
     @classmethod
@@ -87,13 +87,14 @@ class BaseValidation:
             df: pd.DataFrame,
             args_list: list[tuple[str, dict]]
     ) -> dict:
-        """processes the class function assuming every parameter has a pd.Series as the param type
+        """processes the class function assuming every parameter has a pd.Series as the param type, and also
+        returns a pd.Series type
 
         :param function: function to run the args on
         :param df: the dataframe to run the args on
         :param args_list: a list of argument params
 
-        :return: dict
+        :return: dict - {"Check Ref": pd.Series of Results}
         """
         # We need this because arg list only gives you the field name and doesn't tie it to an existing DF
         deliverable = {}
@@ -115,7 +116,8 @@ class BaseValidation:
             df: pd.DataFrame,
             args_list: list[tuple[str, dict]]
     ) -> dict:
-        """processes the class function assuming every parameter has a scalar as the param type
+        """processes the class function assuming every parameter has a scalar as the param type, and returns
+        a single scalar type as well
 
         :param function: function to run the args on
         :param df: the dataframe to run the args on
@@ -125,9 +127,21 @@ class BaseValidation:
         """
         deliverable = {}
         for args in args_list:
-            temp = df[list(args[1].values())].copy()  # should be column names
-            results = function(**temp.to_dict(orient="series"))
-            deliverable[args[0]] = results
+            param_column_dict = args[1]
+
+            # used for renaming the column to parameter names so that we can unpack as args
+            reversed_param_column_dict = {column: param for param, column in param_column_dict.items()}
+
+            temp: pd.DataFrame = df[list(reversed_param_column_dict)].copy()  # filter to keep only function context
+            temp = temp.rename(columns=reversed_param_column_dict)  # rename for arg unpacking
+            list_of_temp_args = temp.to_dict(orient='records')
+
+            # We need to iterate through these new results we just received
+            results = []
+            for arg in list_of_temp_args:
+                result = function(**arg)
+                results.append(result)
+            deliverable[args[0]] = pd.Series(results)
         return deliverable
 
     @classmethod
@@ -140,6 +154,8 @@ class BaseValidation:
         flattened_params_combo = [
             dict(zip(one_to_many_param.keys(), values)) for values in zip(*one_to_many_param.values())
         ]
+        if not flattened_params_combo:
+            flattened_params_combo = [dict()]
         return flattened_params_combo
 
     @classmethod
@@ -204,7 +220,7 @@ class BaseValidation:
             # NOTE cont: I need to be able to create a dict instead of a list to so that I can reference
             # NOTE cont: the changed parameter names
             flat_one_to_many = cls._format_flatten_parameters(one_to_many)
-            arg_sets: list[dict] = [one_to_many_args | one_to_one for one_to_many_args in flat_one_to_many]  # the args
+            arg_sets: list[dict] = [one_to_one | one_to_many_args for one_to_many_args in flat_one_to_many]  # the args
             deliverable[check] = [
                 (cls._format_args_reference_names(args), args) for args in arg_sets
             ]
@@ -268,10 +284,28 @@ class BaseValidation:
         """
         _function_params = {
             check_name: {
-                parameter: t for parameter, t in inspect.get_annotations(function) if parameter not in ('return',)
+                parameter: t
+                for parameter, t in inspect.get_annotations(function).items() if parameter not in ('return',)
             } for check_name, function in cls._get_all_functions_in_class().items()
         }
         return _function_params
+
+    @classmethod
+    def _get_function_return_type(cls) -> dict:
+        """private helper function that gets the class function's return
+
+        :return: dictionary of {`check`: `return_type`}
+        """
+        check_return_annotation = {
+            check_name: inspect.get_annotations(function)
+            for check_name, function in cls._get_all_functions_in_class().items()
+        }
+
+        return_type_mapping = {
+            check: param_pairs["return"] if "return" in param_pairs else None
+            for check, param_pairs in check_return_annotation.items()
+        }
+        return return_type_mapping
 
     @classmethod
     def _get_all_functions_in_class(cls) -> dict:
@@ -311,8 +345,9 @@ class BaseValidation:
                 if param not in all_params:  # don't want to overwrite previous param
                     all_params[param] = None
                     # can delete if it's adding a layer of dependency we don't want
-                    if param in cls.alias_mapping:  # adding the user defined param-column pairing
-                        all_params[param] = cls.alias_mapping[param]
+                    if cls.alias_mapping is not None:
+                        if param in cls.alias_mapping:  # adding the user defined param-column pairing
+                            all_params[param] = cls.alias_mapping[param]
         return all_params
 
     @classmethod
@@ -331,14 +366,14 @@ class BaseValidation:
         missing_params = []
         for param, args in params.items():
             try:
-                column_mapping[param] = True
+                column_mapping[param]
             except KeyError:
                 if args is None:  # because `get_all_params_in_class` will make the value a list from alias or None
                     missing_params.append(param)
         if missing_params:
             raise KeyError(
                 f"Missing columns: {missing_params}. Declare the columns associated with the missing parameters"
-                f" inside the `alias_mapping variable`."
+                f" inside the `alias_mapping` variable in the class."
             )
         return True
 
@@ -352,16 +387,17 @@ class BaseValidation:
         columns = {column: False for column in df.columns.to_list()}
 
         invalid_field_names = []
-        for param in cls.alias_mapping:
-            param_results = []
-            for arg in cls.alias_mapping[param]:
-                try:
-                    columns[arg] = True
-                    param_results.append(True)
-                except KeyError:
-                    param_results.append(False)
-            if not any((result for result in param_results)):  # because none of the fields we defined are in the df
-                invalid_field_names.append(param)
+        if cls.alias_mapping:
+            for param in cls.alias_mapping:
+                param_results = []
+                for arg in cls.alias_mapping[param]:
+                    try:
+                        columns[arg] = True
+                        param_results.append(True)
+                    except KeyError:
+                        param_results.append(False)
+                if not any((result for result in param_results)):  # because none of the fields we defined are in the df
+                    invalid_field_names.append(param)
 
         if invalid_field_names:
             raise KeyError(
@@ -373,7 +409,10 @@ class BaseValidation:
     @classmethod
     def _verify_function_params_match(cls) -> bool:
         """want to make sure if one param is of type series, then another param matches, and should not be a
-        scalar value
+        scalar value.
+
+        May be deprecated in the future in favor of making sure that the return and parameter of
+        the majority matches
 
         :return:
         """
@@ -394,3 +433,33 @@ class BaseValidation:
                 raise ValueError(f"The function cannot have both a scalar parameter and a series parameter."
                                  f" Please update the function to include one or the other, but not both")
         return True
+
+    @classmethod
+    def _verify_function_param_return_match(cls) -> bool:
+        """verifies that the param types (pd.Series, scalar) matches the return type on a function.
+
+        The context for this is when we are deciding to process as a Series function or a Scalar function,
+        we need to add this cap in order to understand how to save the results.
+
+        :return:
+        """
+        function_return_type = cls._get_function_return_type()
+        missing_return_value = [
+            function_name for function_name, return_type in function_return_type.items()
+            if return_type is None
+        ]
+        if missing_return_value:
+            raise ValueError(f"Functions {missing_return_value} is missing a return type.")
+
+        for check, parameter in cls._get_function_param_and_type().items():
+            _has_series_type = False
+            _has_scalar_type = False
+            if all((isinstance(arg, pd.Series) for arg in parameter)):
+                if not isinstance(function_return_type[check], pd.Series):
+                    raise TypeError(f"The return type of a function must match the parameter types")
+            else:
+                _has_scalar_type = True
+                # TODO: Not sure what to do right now with this part of the function
+        return True
+
+
