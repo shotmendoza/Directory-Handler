@@ -193,6 +193,10 @@ class Folder:
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
                     return pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
+            except pd.errors.DtypeWarning as dt_warning:
+                print(dt_warning)
+                print("reprocessing with lower_memory arg...")
+                return pd.read_csv(file_path, low_memory=False, *args, **kwargs)
 
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)

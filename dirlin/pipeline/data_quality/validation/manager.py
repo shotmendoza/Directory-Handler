@@ -50,7 +50,7 @@ class BaseValidation:
             function_args=function_name_to_args_mapping,
             function_type_map=function_to_function_type_map
         )
-        print("Hello World")
+        print(pd.DataFrame.from_dict(results))
         return results
 
     @classmethod

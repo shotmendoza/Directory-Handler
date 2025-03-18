@@ -14,7 +14,7 @@ def example_dataframe_factory() -> pd.DataFrame:
 
 
 # TESTS
-# [ ] SingleLayerObject with Alias Mapping already defined as a map (WORKS)
+# [ x ] SingleLayerObject with Alias Mapping already defined as a map (WORKS)
 # (2) Pd.Series type of return
 # (3) Returns where the param type and return type are different
 # (4) List of Alias Mapping
@@ -25,10 +25,16 @@ def example_dataframe_factory() -> pd.DataFrame:
 
 
 def bad_example_test_function(a: int, b: float | int, c: str):
+    """bad function because this doesn't have a return type
+
+    """
     return f"Hello {c}, you have {a + b}!"
 
 
 def example_test_function(a: int, b: float | int, c: str) -> str:
+    """has all the basic components that it needs
+
+    """
     return f"Hello {c}, you have {a + b}!"
 
 
@@ -44,6 +50,22 @@ class SimpleSingleLayerObject(BaseValidation):
         "b": ["B"],
         "c": ["C"]
     }
+
+
+def example_series_function(a: pd.Series, b: pd.Series, c: pd.Series) -> pd.Series:
+    return pd.Series(a * b * c)
+
+
+class BadSeriesLayerObject(BaseValidation):
+    example_test = example_series_function
+
+    alias_mapping = {
+        "a": ["A"],
+        "b": ["B"],
+        "c": ["C"]
+    }
+
+    example_test2 = example_test_function
 
 
 def test_basic_one_function():
@@ -80,3 +102,11 @@ def test_basic_one_function():
     assert isinstance(result, dict)
     print()
     print(result)
+
+
+def test_series_based_functions():
+    """Looks like this works even on functions that uses a pd.Series type
+
+    """
+    validation = BadSeriesLayerObject()
+    p = validation.run_validation(df=example_dataframe_factory())
