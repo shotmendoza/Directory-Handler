@@ -1,7 +1,7 @@
 """This is the quick pipeline"""
 import pandas as pd
 
-from dirlin import Folder, Path
+from dirlin import FolderPath, Path
 from dirlin.pipeline.data_quality.report import ReportType
 
 
@@ -9,16 +9,16 @@ class Pipeline:
     """an object that allows for quick ETL and EDA process setups"""
     def __init__(
             self,
-            folder: Folder | str | None = None,
+            folder: FolderPath | str | None = None,
     ):
         # ==== setting up the data pull from directory ====
         if folder is None:
             folder = (Path.home() / 'Downloads')
             if not folder.exists():
                 raise FileNotFoundError(f"{folder} is not a folder. Please give an argument for `folder`.")
-            folder = Folder(folder)
+            folder = FolderPath(folder)
         elif isinstance(folder, str):
-            folder = Folder(folder)
+            folder = FolderPath(folder)
             if not folder.path.exists():
                 raise FileNotFoundError(f"`{folder}` does not exist. Please make sure you enter a valid path.")
         # a regular folder type would be okay - might need to add a final check to make it more robust

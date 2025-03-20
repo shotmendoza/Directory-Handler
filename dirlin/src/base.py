@@ -1,7 +1,8 @@
+import math
 import os.path
 from datetime import date, timedelta
-from pathlib import Path
-from typing import Optional
+from pathlib import Path, PosixPath
+from typing import Optional, Hashable, Sequence, Any
 from urllib.parse import urlparse
 from urllib.error import HTTPError
 
@@ -13,6 +14,11 @@ import chardet
 
 class Document:
     def __init__(self, df: pd.DataFrame, path: Path):
+        """wrapper around a Dataframe object so that we can format it with a higher context
+
+        :param df: the dataframe we are working with
+        :param path: of the dataframe object
+        """
         self.dataframe: pd.DataFrame = df
         self.filepath: Path = path
 
@@ -52,29 +58,135 @@ class Document:
             raise e
         return self.filepath
 
-    def check_max(self, column: str):
+    def chunk(
+            self,
+            chunk_size: int = 10000,
+            filename_prefix: str | None = None,
+            write: bool = False
+    ) -> list[pd.DataFrame]:
+        """splits a large Dataframe into multiple chunk-sized dataframes
+
+        :param write: bool, T/F, when True, will write the chunked dataframe to path. Will save in parent folder of path
+        :param filename_prefix: the prefix we want to give as the filename of the files
+        :param chunk_size:
+        :return:
         """
-        Checks the max for the column
+        number_of_chunks = math.ceil(len(self.dataframe) / chunk_size)
+        chunks = [self.dataframe[i*chunk_size: (i+1)*chunk_size] for i in range(number_of_chunks)]
 
-        :param column: Column name that you want to check for max values
-        :return: The max value in the column
+        # Determining whether we're going to write to disc or not
+        if write is True:
+            for idx, df in enumerate(chunks):
+                if not filename_prefix:
+                    filename_prefix = f"{self.filepath.stem} - {date.today()}"
+                df.to_csv(self.filepath.parent / f"{filename_prefix} - {idx + 1} of {len(chunks)}.csv", index=False)
+        return chunks
+
+    def as_ordered_transaction(self,
+                               sort_by: Hashable | Sequence[Hashable],
+                               group_by: Any,
+                               value_fields: Hashable | Sequence[Hashable],
+                               ) -> pd.DataFrame:
+        """will sort and group an element based on a key column.
+        The aggregate function here will be a cumulative sum, so that each record
+        builds on the next one.
+
+        We recommend using an index for the columns you want to use to sort, and making
+        sure to fill in for any missing data points before putting into this function.
+
+        Think transactions inside a group of transactions, that need to be processed in order, and you
+        want to see how each transaction adds onto the previous one.
+
+        Parameters:
+            sort_by: the column(s) to sort by
+            group_by: the column(s) to group by when aggregating
+            value_fields: the column(s) to cumsum and aggregate on. These are the fields that will be used by agg func
+
         """
-        return self.dataframe[column].max()
+        dataset = self.dataframe.copy()
+        dataset = dataset.sort_values(by=sort_by, ascending=[True for _ in sort_by], na_position='first')
 
-    def check_min(self, column: str):
+        # todo utilize the power of DirlinFormatter to parse the value_fields and normalize it against premium field
+        try:
+            ...
+        except Exception as e:
+            raise e
+
+        dataset[[field for field in value_fields]] = dataset.groupby(by=group_by)[value_fields].cumsum()
+        return dataset
+
+
+class Directory:
+    def __init__(self, path: str | Path | None = None, initialize_posix_path: bool = True):
+        """object used for directory level data wrangling
+
+        Documents are wrapper objects that add functionality to Dataframes.
+
+        For macOS, we have extra fields we can use - DOWNLOADS, DESKTOP, DOCUMENTS, DEVELOPER
+        if available.
+
+        Dataframe Functions:
+            - open() : opens a path file and converts it into a dataframe
+            - open_recent(): opens the most recent file as a dataframe based on naming conventions
+            - find_and_combine(): finds all files that follow naming conventions and creates a single dataframe
+            - as_map(): creates a dictionary based on two columns from dataframe
+            - index_files(): creates a list of paths based on file_ext or file suffixes (.csv, .xlsx, etc.)
+
+        ...
+
+        Document Functions:
+            - open_as_document(): opens a path file and converts it into a document object
+            - open_recent_as_document(): opens the most recent Path file and converts it into a document object
+
+        ...
+
+        Attributes:
+            - path: the directory path the folder is set to. If left as None, the path will be set to the downloads
+            folder for macOS. Windows currently not supported.
+            - initialize_posix_path: assumes the script is on a macOS directory
+
+        :param folder: initializes a Folder.folder FolderPath object
+        :param initialize_posix_path: initializes default macOS folders
         """
-        Checks the min value for the column
+        _curr_folder_directory = Path.cwd().home()
 
-        :param column: column that you want to check for min values
-        :return: the minimum value of the column
-        """
-        return self.dataframe[column].min()
+        self.DOWNLOADS: FolderPath | None = None
+        self.DESKTOP: FolderPath | None = None
+        self.DOCUMENTS: FolderPath | None = None
+        self.DEVELOPER: FolderPath | None = None
+
+        # adding the macOS only directory paths, so we don't have to define these in the future and they are included
+        if initialize_posix_path is True:
+            if isinstance(_curr_folder_directory, PosixPath):
+                print(f"Adding macOS specific default directories...")
+                self.DOWNLOADS = FolderPath(_curr_folder_directory / "Downloads")
+                self.DESKTOP = FolderPath(_curr_folder_directory / "Desktop")
+                self.DOCUMENTS = FolderPath(_curr_folder_directory / "Documents")
+
+                try:
+                    self.DEVELOPER = FolderPath(_curr_folder_directory / "Developer")
+                except AttributeError:
+                    print(f"Developer folder has not been created yet on this mac.")
+
+        if path is None:
+            path = self.DOWNLOADS.path
+
+        self.folder: FolderPath = FolderPath(path)
+        """argument given by user pointing to a specific directory"""
+
+    def __truediv__(self, other) -> Path:
+        return self.folder / other
 
 
-class Folder:
-    def __init__(self, folder_path: Path | str):
+class FolderPath:
+    def __init__(self, path: Path | str | None = None):
         """Object used for processing files through local directories.
         Good for partially built out automated processes that can be done on a single computer.
+
+        Documents are wrapper objects that add functionality to Dataframes.
+
+        For macOS, we have extra fields we can use - DOWNLOADS, DESKTOP, DOCUMENTS, DEVELOPER
+        if available.
 
         Dataframe Functions:
             - open() : opens a path file and converts it into a dataframe
@@ -92,19 +204,19 @@ class Folder:
         ...
 
             Attributes:
-                - path: the directory path the folder is set to
+                - path: the directory path the folder is set to. If left as None, the path will be set to the downloads
+                folder for macOS. Windows currently not supported.
+                - initialize_posix_path: assumes the script is on a macOS directory
 
-        :param folder_path: Path to the Folder. This is the directory the functions will use to search files in
+        :param path: Path to the Folder. This is the directory the functions will use to search files in
         """
-        if isinstance(folder_path, str):
-            folder_path = Path(folder_path)
-        self.path = folder_path
+        if isinstance(path, str):
+            path = Path(path)
+        self.path = path
 
         if not self.path.is_dir():
             raise ValueError(f"Expected a path to a folder / directory. Got {self.path}.")
 
-        # (8) wanted to add a way to get the path of open_recent
-        # adding the property here
         self.path_open_recent: Path | None = None
         """stores the most recent path used on self.open_recent or self.open_recent_as_document()"""
 
@@ -113,6 +225,9 @@ class Folder:
 
     def __str__(self):
         return f"{self.path}"
+
+    def __truediv__(self, other) -> Path:
+        return Path(self.path) / other
 
     def _find_recent_files(
             self,

@@ -57,7 +57,7 @@ def example_series_function(a: pd.Series, b: pd.Series, c: pd.Series) -> pd.Seri
 
 
 class BadSeriesLayerObject(BaseValidation):
-    example_test = example_series_function
+    example_test_series = example_series_function
 
     alias_mapping = {
         "a": ["A"],
@@ -110,3 +110,4 @@ def test_series_based_functions():
     """
     validation = BadSeriesLayerObject()
     p = validation.run_validation(df=example_dataframe_factory())
+    print(p)  # we get a {check_name: pd.Series}

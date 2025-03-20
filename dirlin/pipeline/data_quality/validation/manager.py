@@ -1,7 +1,157 @@
+import dataclasses
 import inspect
 from typing import Any, Callable
 
 import pandas as pd
+
+
+@dataclasses.dataclass
+class _ResultWrapper:
+    """used as a wrapper for the results coming from either a scalar function
+    or a Series type function.
+
+    Fields:
+        - `result`: a pd.Series type variable that holds the results from running the function
+        - `check_name`: a str type variable that holds the string name of the check that will be put in the deliverable
+    """
+    result: pd.Series
+    """stores the results of the validation in the BaseValidation object"""
+
+    check_name: str
+    """stores the name of the check that will be put in the deliverable"""
+
+
+class _DirlinFormatter:
+    """utility object used for string formatting and series formatting
+    """
+    @classmethod
+    def convert_field_name_to_python_readable(cls, name: str) -> str:
+        """function for cleaning a column name. Can add onto this to cover more edge cases in the future.
+
+        The function will allow you to transform a standard column `California Taxes` to a python
+        usable format of `california_taxes`
+
+        :param name: the column name or the string we want to format to make it Python friendly
+        :return: a cleaned column name
+        """
+        name = name.strip("-").lower().replace(" ", "_")
+        return name
+
+    # todo should be convert string to number, with int or float as the param
+    @classmethod
+    def convert_string_field_to_integer_field(
+            cls,
+            key_field: pd.Series,
+            balance_field: pd.Series | None = None
+    ) -> pd.Series:
+        """may be used for something like limits in coverages, but will parse and format a pd.Series of strings
+        in a pd.Series of integers
+
+        :param key_field: a pd.Series of strings that we want to convert to a series of integers
+        :param balance_field: when given, will use the signs on the column to normalize against. For example,
+        a negative number on the balance field will convert the key_field to a negative as well
+
+        :return: a formatted pd.Series of integers
+        """
+        # (1) First stab at converting the key column. Assuming simplest case.
+        try:
+            key_field = key_field.fillna(0)
+            key_field = key_field.astype(float).astype(int)
+        except ValueError:
+            key_field = key_field.astype(str).fillna("0")
+
+            # formatting the string to clean up bad values
+            key_field = key_field.str.strip()
+            key_field = key_field.str.rstrip("_")
+            key_field = key_field.str.lower().replace("nan", "0")
+            key_field = key_field.str.replace("$", "")  # handle $
+            key_field = key_field.str.replace(",", "")  # handles commas
+            key_field = key_field.str.replace("_", "")
+            key_field = key_field.str.replace(' ', "")  # handles spaces
+            key_field = key_field.str.replace('no', "")  # handles no
+            key_field = key_field.str.replace('none', "")  # handles none
+
+        # (2) Second stab after trying to clean the column with any special values
+        try:
+            key_field = key_field.astype(str).fillna("0")
+            key_field = key_field.astype(float).astype(int)
+        except ValueError:
+            key_field = pd.to_numeric(key_field, errors='coerce', downcast='integer')
+            key_field = key_field.fillna(0)
+            key_field = key_field.astype(float).astype(int)
+        except Exception as e:
+            # catch all for now to future-proof any errors we might see
+            raise e
+
+        # (3) the optional parameter to normalize against the balance field
+        if isinstance(balance_field, pd.Series):
+            key_field = pd.Series(
+                [abs(amount) if b >= 0 else abs(amount) * -1 for amount, b in zip(key_field, balance_field)]
+            )
+        return key_field
+
+    @classmethod
+    def flatten_dict_to_list(cls, one_to_many_param: dict) -> list[dict]:
+        """used when ONE parameter has MANY columns associated with it, this function will convert
+        a nested list inside a dictionary, into a list of dictionaries with a key-value pair of
+        `parameter: column_name`
+
+        FROM one_to_many_param TO list of dictionaries
+        FROM `{A: [1, 2, 3], B: [A, B, C]}` TO `[{A: 1, B: A}, {A: 2, B: B}, {A: 3, B: C}]`
+
+        """
+        flattened_params_combo = [
+            dict(zip(one_to_many_param.keys(), values)) for values in zip(*one_to_many_param.values())
+        ]
+        if not flattened_params_combo:
+            flattened_params_combo = [dict()]
+        return flattened_params_combo
+
+    @classmethod
+    def format_args_reference_names(cls, arg_pair: dict[str, str], prefix: str | int | None = None) -> str:
+        """need this function in order to accept the argument from `map_function_to_args`.
+        This function allows us to reference the different arguments when we use the `run_validation` function.
+
+        Having a reference point allows us to create different variations of a final deliverable.
+        For example, we want to show check_a_v1: 100 errors, check_a_v2: 10 errors. This function creates the
+        `check_a_v1` and `check_a_v2` reference names.
+
+        :param arg_pair: the argument set we are going to use for a given function, likely comes from the
+        `map_function_to_args` function.
+
+        :return: a formatted reference name
+        """
+        cleaned_string = "_".join(
+            (cls.convert_field_name_to_python_readable(column_name) for column_name in arg_pair.values())
+        )
+        if prefix is not None:
+            cleaned_string = f"instance_{prefix}_{cleaned_string}"
+        return cleaned_string
+
+    @classmethod
+    def convert_string_field_to_percentage_field(cls, percentage_field: pd.Series) -> pd.Series:
+        """formats a percentage column with two decimal places and a percentage symbol
+
+        :param percentage_field: the string field with the percentage values
+        """
+        percentage_field = percentage_field.fillna("0").str.rstrip('%').astype(float)
+        return pd.Series([f"{round(float(value)): .2f}" for value in percentage_field])
+
+    @classmethod
+    def convert_percentage_field_to_float_field(cls, percentage_field: pd.Series) -> pd.Series:
+        """formats a percentage column into a float column
+
+        """
+        percentage_field = percentage_field.fillna("0").str.rstrip('%').astype(float) / 100  # todo conditional on val
+        return pd.Series(percentage_field)
+
+    @classmethod
+    def format_zip_fields(cls, zip_field: pd.Series) -> pd.Series:
+        """retains the leading 0 in a zip code string field
+
+        :param zip_field: the field with the Zip Code values
+        """
+        return zip_field.astype(str).str.extract('(\d+)', expand=False).str.zfill(5)
 
 
 class _BaseValidationVerifier:
@@ -179,6 +329,7 @@ class BaseValidation:
     """
 
     _validator: _BaseValidationVerifier = _BaseValidationVerifier
+    _formatter: _DirlinFormatter = _DirlinFormatter()
 
     @classmethod
     def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
@@ -198,11 +349,11 @@ class BaseValidation:
 
         # STEP 3: RUN THE CHECKS
         results = cls._process_function_with_args(
-            df, function_map=function_mapping,
+            df,
+            function_map=function_mapping,
             function_args=function_name_to_args_mapping,
             function_type_map=function_to_function_type_map
         )
-        print(pd.DataFrame.from_dict(results))
         return results
 
     @classmethod
@@ -212,23 +363,29 @@ class BaseValidation:
             *,
             function_map: dict,
             function_type_map: dict[str, bool],  # true is series
-            function_args: dict[str, list[tuple[str, dict]]],
+            function_args: dict[str, list[dict]],
 
     ) -> dict:
         """identifies the type of function we are dealing with, and will run the
         function and its arguments according to its needs. For example, a parameter of type pd.Series will
         run differently than a function running based on float.
 
+        Parameters:
+            - function_args: gives you a list of parameter to column pairs. Each member of list
+            has the same set of parameter keys, but different column values.
+
         """
         # in the future, this may be under the Check class
         results = {}
         for function_name, function in function_map.items():
-            param_args_list = function_args[function_name]
+            # function_args has the same key as function_map
+            param_args_list = function_args[function_name]  # should be list of {param: col}
             match function_type_map[function_name]:
                 case True:
-                    temp = cls._process_function_as_series_function(function, df, param_args_list)
+                    result = cls._process_function_as_series_function(function, df, param_args_list)
                 case _:
-                    temp = cls._process_function_as_scalar_function(function, df, param_args_list)
+                    result = cls._process_function_as_scalar_function(function, df, param_args_list)
+            temp = {r.check_name: r.result for r in result}  # todo only needs to be a list from result
             results = results | temp
         return results
 
@@ -237,28 +394,27 @@ class BaseValidation:
             cls,
             function: Callable,
             df: pd.DataFrame,
-            args_list: list[tuple[str, dict]]
-    ) -> dict:
+            args_list: list[dict[str, str]]
+    ) -> list[_ResultWrapper]:
         """processes the class function assuming every parameter has a pd.Series as the param type, and also
         returns a pd.Series type
 
         :param function: function to run the args on
         :param df: the dataframe to run the args on
-        :param args_list: a list of argument params
+        :param args_list: a list of `param: column` pairs
 
-        :return: dict - {"Check Ref": pd.Series of Results}
+        :return: _ResultWrapper
         """
         # We need this because arg list only gives you the field name and doesn't tie it to an existing DF
-        deliverable = {}
+        deliverable = []
         new_keys = {
-            args_tuple[0]: {
-                param: df[column] for param, column in args_tuple[1].items()
-            } for args_tuple in args_list
-        }
+            cls._formatter.format_args_reference_names(args_pair, "series"): {
+                param: df[column] for param, column in args_pair.items()
+            } for args_pair in args_list
+        }  # this should look like `check_name`: `{param: pd.Series}` aka args_pair
 
-        for ref_name, args in new_keys:
-            results = function(**args)
-            deliverable[ref_name] = results
+        # list comprehension to get all the results as a list
+        deliverable = [_ResultWrapper(function(**args), name) for name, args in new_keys.items()]
         return deliverable
 
     @classmethod
@@ -266,85 +422,46 @@ class BaseValidation:
             cls,
             function: Callable,
             df: pd.DataFrame,
-            args_list: list[tuple[str, dict]]
-    ) -> dict:
+            args_list: list[dict[str, str]]
+    ) -> list[_ResultWrapper]:
         """processes the class function assuming every parameter has a scalar as the param type, and returns
         a single scalar type as well
 
-        :param function: function to run the args on
+        :param function: the callable function we will be validating the Dataframe with
         :param df: the dataframe to run the args on
-        :param args_list: a list of argument params
+        :param args_list: a list of `param: column` pairs
 
-        :return: dict
+        Note that when you iterate through the args_list, you will get a different combination of columns.
+
+        arg_list is from a higher level, and gives you a mapping of the columns involved with the function
+        you are using.
+
+        :return: list of ResultWrappers
         """
-        deliverable = {}
-        for args in args_list:
-            param_column_dict = args[1]
-
+        deliverable = []
+        for args_pair in args_list:
             # used for renaming the column to parameter names so that we can unpack as args
-            reversed_param_column_dict = {column: param for param, column in param_column_dict.items()}
-
+            reversed_param_column_dict = {column: param for param, column in args_pair.items()}
             temp: pd.DataFrame = df[list(reversed_param_column_dict)].copy()  # filter to keep only function context
             temp = temp.rename(columns=reversed_param_column_dict)  # rename for arg unpacking
-            list_of_temp_args = temp.to_dict(orient='records')
+            list_of_temp_args = temp.to_dict(orient='records')  # now we have a list of `param: args` pair
+            # we can use this list to run through the scalar functions since this is a records dict
 
             # We need to iterate through these new results we just received
-            results = []
-            for arg in list_of_temp_args:
-                result = function(**arg)
-                results.append(result)
-            deliverable[args[0]] = pd.Series(results)
+            results = [function(**args) for args in list_of_temp_args]
+            check_name = cls._formatter.format_args_reference_names(args_pair)
+            deliverable.append(_ResultWrapper(result=pd.Series(results), check_name=check_name))
         return deliverable
 
     @classmethod
-    def _format_flatten_parameters(cls, one_to_many_param: dict) -> list[dict]:
-        """used when ONE parameter has MANY columns associated with it, this function will convert
-        a nested list inside a dictionary, into a list of dictionaries with a key-value pair of
-        `parameter: column_name`
-
-        """
-        flattened_params_combo = [
-            dict(zip(one_to_many_param.keys(), values)) for values in zip(*one_to_many_param.values())
-        ]
-        if not flattened_params_combo:
-            flattened_params_combo = [dict()]
-        return flattened_params_combo
-
-    @classmethod
-    def _format_args_reference_names(cls, arg_set: dict[str, str]) -> str:
-        """need this function in order to accept the argument from `map_function_to_args`.
-        This function allows us to reference the different arguments when we use the `run_validation` function.
-        Having a reference point allows us to create different variations of a final deliverable.
-        For example, we want to show check_a_v1: 100 errors, check_a_v2: 10 errors. This function creates the
-        `check_a_v1` and `check_a_v2` reference names.
-
-        :param arg_set: the argument set we are going to use for a given function, likely comes from the
-        `map_function_to_args` function.
-
-        :return: a formatted reference name
-        """
-        cleaned_string = "_".join((cls._format_column_names(column_name) for column_name in arg_set.values()))
-        return cleaned_string
-
-    @classmethod
-    def _format_column_names(cls, name: str) -> str:
-        """function for cleaning a column name. Can add onto this to cover more edge cases in the future.
-
-        :param name: the column name or the string we want to format to make it Python friendly
-        :return: a cleaned column name
-        """
-        name = name.strip("-").lower().replace(" ", "_")
-        return name
-
-    @classmethod
-    def _map_function_to_args(cls, df: pd.DataFrame) -> dict[str, list[tuple[str, dict]]]:
+    def _map_function_to_args(cls, df: pd.DataFrame) -> dict[str, list[dict]]:
         """identifies whether a param has a one-to-one or a one-to-many relationship with a column.
         Once identified, will flatten fields with a one-to-many, and will create a list of
         function args. Keeps in context of the check that the parameters are under to ensure
         that the arg dicts we made tie out correctly to the function. This is important so that the
         function argument list does not have a parameter that is not associated with the function.
 
-        :return: a dictionary with key-value pairs of {`check`: [(`ref1`, {p1: c1, p2: c2, ...}),], ...}
+        :return: a dictionary with key-value pairs of {`check`: [{p1: c1, p2: c2, ...}], ...}
         """
         check_mapping = cls._get_function_param_and_type()
         param_mapping = cls._map_param_to_columns(df)
@@ -371,11 +488,11 @@ class BaseValidation:
             # NOTE: realized that if I want to reference the params being used in the final deliverable,
             # NOTE cont: I need to be able to create a dict instead of a list to so that I can reference
             # NOTE cont: the changed parameter names
-            flat_one_to_many = cls._format_flatten_parameters(one_to_many)
+            flat_one_to_many = cls._formatter.flatten_dict_to_list(one_to_many)
             arg_sets: list[dict] = [one_to_one | one_to_many_args for one_to_many_args in flat_one_to_many]  # the args
-            deliverable[check] = [
-                (cls._format_args_reference_names(args), args) for args in arg_sets
-            ]
+
+            # 2025.03.21 previous way added too much complexity. Fixed to keep it clean.
+            deliverable[check] = [args for args in arg_sets]
         return deliverable
 
     @classmethod
@@ -410,7 +527,7 @@ class BaseValidation:
             _has_series_type = False
             _has_scalar_type = False
             for param, p_type in args.items():
-                if isinstance(p_type, pd.Series):
+                if p_type == pd.Series:
                     _has_series_type = True
                 elif isinstance(p_type, pd.DataFrame):
                     raise NotImplementedError(
@@ -501,4 +618,3 @@ class BaseValidation:
                         if param in cls.alias_mapping:  # adding the user defined param-column pairing
                             all_params[param] = cls.alias_mapping[param]
         return all_params
-

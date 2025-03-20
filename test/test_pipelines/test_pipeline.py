@@ -1,12 +1,12 @@
 import pandas as pd
 import pytest
 
-from dirlin import Folder
+from dirlin import FolderPath
 from dirlin.pipeline import Pipeline, Report, Check, Validation
 
 
 class TestPipeLine:
-    f = Folder(folder_path="/Volumes/Sho's SSD/trading")
+    f = FolderPath(path="/Volumes/Sho's SSD/trading")
 
     report_for_formatting = Report(
         name_convention="ohlcv",
@@ -55,7 +55,7 @@ class TestPipeLine:
 
 
 class TestCheckProcess:
-    f = Folder(folder_path="/Volumes/Sho's SSD/trading")
+    f = FolderPath(path="/Volumes/Sho's SSD/trading")
     qp = Pipeline(f)
 
     report_for_formatting = Report(
