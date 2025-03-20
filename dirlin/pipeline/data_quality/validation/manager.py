@@ -4,6 +4,153 @@ from typing import Any, Callable
 import pandas as pd
 
 
+class _BaseValidationVerifier:
+    def __init__(
+            self,
+            df: pd.DataFrame,
+            function_return_type: dict,
+            function_param_and_type: dict,
+            params_in_class: dict,
+            alias_mapping: dict,
+    ):
+        """used for running verification on the base class to ensure that the formatting
+        and organization of the dataframe is correct, and made in a way that the BaseValidation
+        object can handle
+
+        :param df: the dataframe we are verifying that follows the formatting for BaseValidation
+        :param function_return_type: dictionary of {`check`: `return_type`}. Pulled from `_get_function_return_type`
+        :param function_param_and_type: dictionary of `check: {parameter: Type}`. From `_get_function_param_and_type`
+        :param params_in_class: dictionary of `parameter: list[column] | None`. From `_get_all_params_in_class`
+        :param alias_mapping: {`parameter name`: [`associated columns`]}
+        """
+        self.df = df
+        self.function_return_type = function_return_type
+        self.function_param_and_type = function_param_and_type
+        self.params_in_class = params_in_class
+        self.alias_mapping = alias_mapping
+
+    def _verify_function_param_return_match(self) -> bool:
+        """verifies that the param types (pd.Series, scalar) matches the return type on a function.
+
+        The context for this is when we are deciding to process as a Series function or a Scalar function,
+        we need to add this cap in order to understand how to save the results.
+
+        :return: True / False
+        """
+        missing_return_value = [
+            function_name for function_name, return_type in self.function_return_type.items()
+            if return_type is None
+        ]
+        if missing_return_value:
+            raise ValueError(f"Functions {missing_return_value} is missing a return type.")
+
+        for check, parameter in self.function_param_and_type.items():
+            _has_series_type = False
+            _has_scalar_type = False
+            if all((isinstance(arg, pd.Series) for arg in parameter)):
+                if not isinstance(self.function_return_type[check], pd.Series):
+                    raise TypeError(f"The return type of a function must match the parameter types")
+            else:
+                _has_scalar_type = True
+                # TODO: Not sure what to do right now with this part of the function
+        return True
+
+    def _verify_function_params_match(self) -> bool:
+        """want to make sure if one param is of type series, then another param matches, and should not be a
+        scalar value.
+
+        May be deprecated in the future in favor of making sure that the return and parameter of
+        the majority matches
+
+        :return:
+        """
+        for check, check_args in self.function_param_and_type.items():
+            _has_series_type = False
+            _has_scalar_type = False
+            for param, p_type in check_args.items():
+                if isinstance(p_type, pd.Series):
+                    _has_series_type = True
+                elif isinstance(p_type, pd.DataFrame):
+                    raise NotImplementedError(
+                        f"We currently do not support Dataframes as a check argument."
+                        f" Please update the check function to include either on pd.Series, list-like, or scalar values"
+                    )
+                else:  # we're going to assume single values for now and not lists. Those will error out for now.
+                    _has_scalar_type = True
+            if _has_series_type and _has_scalar_type:
+                raise ValueError(f"The function cannot have both a scalar parameter and a series parameter."
+                                 f" Please update the function to include one or the other, but not both")
+        return True
+
+    def _verify_alias_mapping(self) -> bool:
+        """verifies that alias mapping was properly defined and usable.
+
+        :return: True if the alias mapping was properly defined and usable, raises an error otherwise
+        """
+        columns = {column: False for column in self.df.columns.to_list()}
+
+        invalid_field_names = []
+        if self.alias_mapping:
+            for param in self.alias_mapping:
+                param_results = []
+                for arg in self.alias_mapping[param]:
+                    try:
+                        columns[arg] = True
+                        param_results.append(True)
+                    except KeyError:
+                        param_results.append(False)
+                if not any((result for result in param_results)):  # because none of the fields we defined are in the df
+                    invalid_field_names.append(param)
+
+        if invalid_field_names:
+            raise KeyError(
+                f"{invalid_field_names} were not in the dataframe. "
+                f"Please update the `alias_mapping` variable with the correct field names."
+            )
+        return True
+
+    def _verify_column_ties_to_parameter(self) -> bool:
+        """verifies that all the parameters in the super class has atleast one associated column
+        tied to it.
+
+        If that check fails, it will raise an error, and will notify the user to add the column
+        to the `alias_mapping` variable so that is ties to the parameter it's missing,
+        or to remove the function altogether if it's irrelevant.
+        """
+        column_mapping = {column: False for column in self.df.columns.to_list()}
+        params = self.params_in_class
+
+        # Tying Out the Columns
+        missing_params = []
+        for param, args in params.items():
+            try:
+                column_mapping[param]
+            except KeyError:
+                if args is None:  # because `get_all_params_in_class` will make the value a list from alias or None
+                    missing_params.append(param)
+        if missing_params:
+            raise KeyError(
+                f"Missing columns: {missing_params}. Declare the columns associated with the missing parameters"
+                f" inside the `alias_mapping` variable in the class."
+            )
+        return True
+
+    def check_all(self) -> bool:
+        """we'll hard code all the checks for now, but this can be made more dynamic in the future.
+        Will run all the validations we have set up so far to ensure proper formatting
+
+        Will raise an error if any of the functions fail
+
+        :return: True / False
+        """
+        self._verify_alias_mapping()  # validates alias mapping is set up correctly
+        self._verify_column_ties_to_parameter()  # validates that all parameters are accounted for
+        self._verify_function_params_match()  # verifies that parameter types are uniform
+        self._verify_function_param_return_match()  # need input for the type of func param
+
+        return True
+
+
 # 2025.02.26 - creating new architecture for the quick pipeline
 # we're doing this to make setup easier since it got a little complicated
 # and time-consuming when onboarding new clients
@@ -31,13 +178,18 @@ class BaseValidation:
     you to add missing parameters into this variable as a dict.
     """
 
+    _validator: _BaseValidationVerifier = _BaseValidationVerifier
+
     @classmethod
     def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
         # STEP 1: VALIDATE to validate that the class was set up correctly and is usable (GLOBAL)
-        cls._verify_alias_mapping(df=df)  # validates alias mapping is set up correctly
-        cls._verify_column_ties_to_parameter(df=df)  # validates that all parameters are accounted for
-        cls._verify_function_params_match()  # verifies that parameter types are uniform
-        cls._verify_function_param_return_match()  # need input for the type of func param
+        _verify = cls._validator(
+            df,
+            cls._get_function_return_type(),
+            cls._get_function_param_and_type(),
+            cls._get_all_params_in_class(),
+            cls.alias_mapping,
+        ).check_all()
 
         # STEP 2: INITIALIZE to create all the maps, to prepare for running the checks
         function_name_to_args_mapping = cls._map_function_to_args(df)  # gives me the func_name and (param and arg) tup
@@ -349,117 +501,4 @@ class BaseValidation:
                         if param in cls.alias_mapping:  # adding the user defined param-column pairing
                             all_params[param] = cls.alias_mapping[param]
         return all_params
-
-    @classmethod
-    def _verify_column_ties_to_parameter(cls, df: pd.DataFrame) -> bool:
-        """verifies that all the parameters in the super class has atleast one associated column
-        tied to it.
-
-        If that check fails, it will raise an error, and will notify the user to add the column
-        to the `alias_mapping` variable so that is ties to the parameter it's missing,
-        or to remove the function altogether if it's irrelevant.
-        """
-        column_mapping = {column: False for column in df.columns.to_list()}
-        params = cls._get_all_params_in_class()
-
-        # Tying Out the Columns
-        missing_params = []
-        for param, args in params.items():
-            try:
-                column_mapping[param]
-            except KeyError:
-                if args is None:  # because `get_all_params_in_class` will make the value a list from alias or None
-                    missing_params.append(param)
-        if missing_params:
-            raise KeyError(
-                f"Missing columns: {missing_params}. Declare the columns associated with the missing parameters"
-                f" inside the `alias_mapping` variable in the class."
-            )
-        return True
-
-    @classmethod
-    def _verify_alias_mapping(cls, df: pd.DataFrame) -> bool:
-        """verifies that alias mapping was properly defined and usable.
-
-        :param df: the dataframe we are using to tie to the Validation object
-        :return: True if the alias mapping was properly defined and usable, raises an error otherwise
-        """
-        columns = {column: False for column in df.columns.to_list()}
-
-        invalid_field_names = []
-        if cls.alias_mapping:
-            for param in cls.alias_mapping:
-                param_results = []
-                for arg in cls.alias_mapping[param]:
-                    try:
-                        columns[arg] = True
-                        param_results.append(True)
-                    except KeyError:
-                        param_results.append(False)
-                if not any((result for result in param_results)):  # because none of the fields we defined are in the df
-                    invalid_field_names.append(param)
-
-        if invalid_field_names:
-            raise KeyError(
-                f"{invalid_field_names} were not in the dataframe. "
-                f"Please update the `alias_mapping` variable with the correct field names."
-            )
-        return True
-
-    @classmethod
-    def _verify_function_params_match(cls) -> bool:
-        """want to make sure if one param is of type series, then another param matches, and should not be a
-        scalar value.
-
-        May be deprecated in the future in favor of making sure that the return and parameter of
-        the majority matches
-
-        :return:
-        """
-        for check, check_args in cls._get_function_param_and_type().items():
-            _has_series_type = False
-            _has_scalar_type = False
-            for param, p_type in check_args.items():
-                if isinstance(p_type, pd.Series):
-                    _has_series_type = True
-                elif isinstance(p_type, pd.DataFrame):
-                    raise NotImplementedError(
-                        f"We currently do not support Dataframes as a check argument."
-                        f" Please update the check function to include either on pd.Series, list-like, or scalar values"
-                    )
-                else:  # we're going to assume single values for now and not lists. Those will error out for now.
-                    _has_scalar_type = True
-            if _has_series_type and _has_scalar_type:
-                raise ValueError(f"The function cannot have both a scalar parameter and a series parameter."
-                                 f" Please update the function to include one or the other, but not both")
-        return True
-
-    @classmethod
-    def _verify_function_param_return_match(cls) -> bool:
-        """verifies that the param types (pd.Series, scalar) matches the return type on a function.
-
-        The context for this is when we are deciding to process as a Series function or a Scalar function,
-        we need to add this cap in order to understand how to save the results.
-
-        :return:
-        """
-        function_return_type = cls._get_function_return_type()
-        missing_return_value = [
-            function_name for function_name, return_type in function_return_type.items()
-            if return_type is None
-        ]
-        if missing_return_value:
-            raise ValueError(f"Functions {missing_return_value} is missing a return type.")
-
-        for check, parameter in cls._get_function_param_and_type().items():
-            _has_series_type = False
-            _has_scalar_type = False
-            if all((isinstance(arg, pd.Series) for arg in parameter)):
-                if not isinstance(function_return_type[check], pd.Series):
-                    raise TypeError(f"The return type of a function must match the parameter types")
-            else:
-                _has_scalar_type = True
-                # TODO: Not sure what to do right now with this part of the function
-        return True
-
 
