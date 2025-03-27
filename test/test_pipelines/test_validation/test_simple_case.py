@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from dirlin.pipeline.data_quality.validation.manager import BaseValidation
+from dirlin.src.base.validation import BaseValidation
 
 
 def example_dataframe_factory() -> pd.DataFrame:
@@ -15,7 +15,7 @@ def example_dataframe_factory() -> pd.DataFrame:
 
 # TESTS
 # [ x ] SingleLayerObject with Alias Mapping already defined as a map (WORKS)
-# (2) Pd.Series type of return
+# [ x ] Pd.Series type of return
 # (3) Returns where the param type and return type are different
 # (4) List of Alias Mapping
 

@@ -1,31 +1,33 @@
 """This is the quick pipeline"""
+from typing import Any
+
 import pandas as pd
 
-from dirlin import FolderPath, Path
-from dirlin.pipeline.data_quality.report import ReportType
+from dirlin import Folder, Path
+from dirlin.src.pipeline.data_quality.report import ReportType
 
 
 class Pipeline:
     """an object that allows for quick ETL and EDA process setups"""
     def __init__(
             self,
-            folder: FolderPath | str | None = None,
+            folder: Folder | str | None = None,
     ):
         # ==== setting up the data pull from directory ====
         if folder is None:
             folder = (Path.home() / 'Downloads')
             if not folder.exists():
                 raise FileNotFoundError(f"{folder} is not a folder. Please give an argument for `folder`.")
-            folder = FolderPath(folder)
+            folder = Folder(folder)
         elif isinstance(folder, str):
-            folder = FolderPath(folder)
+            folder = Folder(folder)
             if not folder.path.exists():
                 raise FileNotFoundError(f"`{folder}` does not exist. Please make sure you enter a valid path.")
         # a regular folder type would be okay - might need to add a final check to make it more robust
         self._folder = folder
         """The folder path where the Pipeline will search"""
 
-        self.report_name_validation_pairs: dict[str: ValidationType] = dict()
+        self.report_name_validation_pairs: dict[str: Any] = dict()
         """`Report Name: Validation` key-value pairs used for running the checks and keeping the context
         of which report to run with which validation. These have a one-to-one relationship, even
         if some of the reports have a common validation set.
@@ -60,7 +62,7 @@ class Pipeline:
     def add_report_set(
             self,
             report: ReportType,
-            validation: ValidationType,
+            validation: Any,
             *,
             normalize_cash_columns: bool = False,
             drop_duplicate_columns: bool = False,

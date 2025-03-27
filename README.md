@@ -84,8 +84,10 @@ The Pipeline uses 4 different objects:
 4. `Validation` - defines all the checks you want to run in the pipeline
 
 ### Setting up a Report
+
 ```python
-from dirlin.pipeline import Report
+from dirlin.src.pipeline import Report
+
 report = Report(
     name_convention="ohlcv",  # name of the file you are looking for
     field_mapping={'High': 'high', 'Low': 'low'},  # the name you want to update the fields to
@@ -100,12 +102,14 @@ Let's say that you want to add a check to make sure that values in `low` is neve
 than the values in `high`. We'll walk through how to quickly set that up.
 
 ```python
-from dirlin.pipeline import Check
+from dirlin.src.pipeline import Check
+
 
 def low_never_higher_than_high(low: float, high: float):
-    if  high <= low:
+    if high <= low:
         return False
     return True
+
 
 new_check = Check(low_never_higher_than_high)
 ```
@@ -116,11 +120,12 @@ new_check = Check(low_never_higher_than_high)
 ...
 
 ### Bringing it Together
+
 ```python
-from dirlin.pipeline import Pipeline, Report
+from dirlin.src.pipeline import Pipeline, Report
 
 f = "folder path"
-pipeline =  Pipeline(f)
+pipeline = Pipeline(f)
 
 report = Report("ohlcv", {"High": "high", "Low": "low"})
 df = pipeline.get_worksheet("ohlcv", report=report)

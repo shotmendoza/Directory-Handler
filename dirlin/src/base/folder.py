@@ -1,8 +1,7 @@
-import math
 import os.path
 from datetime import date, timedelta
 from pathlib import Path, PosixPath
-from typing import Optional, Hashable, Sequence, Any
+from typing import Optional
 from urllib.parse import urlparse
 from urllib.error import HTTPError
 
@@ -11,132 +10,17 @@ import pandas.errors
 
 import chardet
 
-
-class Document:
-    def __init__(self, df: pd.DataFrame, path: Path):
-        """wrapper around a Dataframe object so that we can format it with a higher context
-
-        :param df: the dataframe we are working with
-        :param path: of the dataframe object
-        """
-        self.dataframe: pd.DataFrame = df
-        self.filepath: Path = path
-
-    def check_columns(self, headers: list[str], match_all: bool = True, raise_error: bool = True) -> bool:
-        """
-        Checks the dataframe to confirm that expected columns are in the data.
-
-        :param headers: the headers to check for
-        :param match_all: defaults to confirm every column is in data. When False, confirms if any columns is in data
-        :param raise_error: defaults to raising error for missing column. When False, only returns bool
-        :return: True if all columns are present. False if any or all columns are missing (param dependent)
-        """
-        if match_all is True:
-            if any([h in self.dataframe.columns for h in headers]) is False:
-                if raise_error:
-                    raise KeyError(f"Missing on or all expected columns {headers} in {self.filepath.stem} file.")
-                return False
-            return True
-
-        if any([h in self.dataframe.columns for h in headers]) is True:
-            return True
-        else:
-            if raise_error:
-                raise KeyError(f"Missing all expected columns {headers} in {self.filepath.stem} file.")
-            return False
-
-    def move_file(self, destination: Path):
-        """
-        Moves the current file you are working with to another folder or destination.
-
-        :param destination: the full path (including filename) of the Path object
-        :return: the new path (also changes state of object in self.filepath)
-        """
-        try:
-            self.filepath = self.filepath.rename(target=destination)
-        except Exception as e:
-            raise e
-        return self.filepath
-
-    def chunk(
-            self,
-            chunk_size: int = 10000,
-            filename_prefix: str | None = None,
-            write: bool = False
-    ) -> list[pd.DataFrame]:
-        """splits a large Dataframe into multiple chunk-sized dataframes
-
-        :param write: bool, T/F, when True, will write the chunked dataframe to path. Will save in parent folder of path
-        :param filename_prefix: the prefix we want to give as the filename of the files
-        :param chunk_size:
-        :return:
-        """
-        number_of_chunks = math.ceil(len(self.dataframe) / chunk_size)
-        chunks = [self.dataframe[i*chunk_size: (i+1)*chunk_size] for i in range(number_of_chunks)]
-
-        # Determining whether we're going to write to disc or not
-        if write is True:
-            for idx, df in enumerate(chunks):
-                if not filename_prefix:
-                    filename_prefix = f"{self.filepath.stem} - {date.today()}"
-                df.to_csv(self.filepath.parent / f"{filename_prefix} - {idx + 1} of {len(chunks)}.csv", index=False)
-        return chunks
-
-    def as_ordered_transaction(self,
-                               sort_by: Hashable | Sequence[Hashable],
-                               group_by: Any,
-                               value_fields: Hashable | Sequence[Hashable],
-                               ) -> pd.DataFrame:
-        """will sort and group an element based on a key column.
-        The aggregate function here will be a cumulative sum, so that each record
-        builds on the next one.
-
-        We recommend using an index for the columns you want to use to sort, and making
-        sure to fill in for any missing data points before putting into this function.
-
-        Think transactions inside a group of transactions, that need to be processed in order, and you
-        want to see how each transaction adds onto the previous one.
-
-        Parameters:
-            sort_by: the column(s) to sort by
-            group_by: the column(s) to group by when aggregating
-            value_fields: the column(s) to cumsum and aggregate on. These are the fields that will be used by agg func
-
-        """
-        dataset = self.dataframe.copy()
-        dataset = dataset.sort_values(by=sort_by, ascending=[True for _ in sort_by], na_position='first')
-
-        # todo utilize the power of DirlinFormatter to parse the value_fields and normalize it against premium field
-        try:
-            ...
-        except Exception as e:
-            raise e
-
-        dataset[[field for field in value_fields]] = dataset.groupby(by=group_by)[value_fields].cumsum()
-        return dataset
+from dirlin.src.base.document import Document
 
 
 class Directory:
     def __init__(self, path: str | Path | None = None, initialize_posix_path: bool = True):
-        """object used for directory level data wrangling
-
-        Documents are wrapper objects that add functionality to Dataframes.
+        """object used for directory level data wrangling. Can think of directories as a collection
+        of Folders, where the Folder object handles different functionality for processing, while the
+        Directory object keeps them organized.
 
         For macOS, we have extra fields we can use - DOWNLOADS, DESKTOP, DOCUMENTS, DEVELOPER
         if available.
-
-        Dataframe Functions:
-            - open() : opens a path file and converts it into a dataframe
-            - open_recent(): opens the most recent file as a dataframe based on naming conventions
-            - find_and_combine(): finds all files that follow naming conventions and creates a single dataframe
-            - as_map(): creates a dictionary based on two columns from dataframe
-            - index_files(): creates a list of paths based on file_ext or file suffixes (.csv, .xlsx, etc.)
-
-        ...
-
-        Document Functions:
-            - open_as_document(): opens a path file and converts it into a document object
-            - open_recent_as_document(): opens the most recent Path file and converts it into a document object
 
         ...
 
@@ -150,43 +34,37 @@ class Directory:
         """
         _curr_folder_directory = Path.cwd().home()
 
-        self.DOWNLOADS: FolderPath | None = None
-        self.DESKTOP: FolderPath | None = None
-        self.DOCUMENTS: FolderPath | None = None
-        self.DEVELOPER: FolderPath | None = None
+        self.DOWNLOADS: Folder | None = None
+        self.DESKTOP: Folder | None = None
+        self.DOCUMENTS: Folder | None = None
+        self.DEVELOPER: Folder | None = None
 
         # adding the macOS only directory paths, so we don't have to define these in the future and they are included
         if initialize_posix_path is True:
             if isinstance(_curr_folder_directory, PosixPath):
                 print(f"Adding macOS specific default directories...")
-                self.DOWNLOADS = FolderPath(_curr_folder_directory / "Downloads")
-                self.DESKTOP = FolderPath(_curr_folder_directory / "Desktop")
-                self.DOCUMENTS = FolderPath(_curr_folder_directory / "Documents")
+                self.DOWNLOADS = Folder(_curr_folder_directory / "Downloads")
+                self.DESKTOP = Folder(_curr_folder_directory / "Desktop")
+                self.DOCUMENTS = Folder(_curr_folder_directory / "Documents")
 
                 try:
-                    self.DEVELOPER = FolderPath(_curr_folder_directory / "Developer")
+                    self.DEVELOPER = Folder(_curr_folder_directory / "Developer")
                 except AttributeError:
                     print(f"Developer folder has not been created yet on this mac.")
 
         if path is None:
             path = self.DOWNLOADS.path
 
-        self.folder: FolderPath = FolderPath(path)
+        self.folder: Folder = Folder(path)
         """argument given by user pointing to a specific directory"""
 
     def __truediv__(self, other) -> Path:
         return self.folder / other
 
 
-class FolderPath:
+class Folder:
     def __init__(self, path: Path | str | None = None):
-        """Object used for processing files through local directories.
-        Good for partially built out automated processes that can be done on a single computer.
-
-        Documents are wrapper objects that add functionality to Dataframes.
-
-        For macOS, we have extra fields we can use - DOWNLOADS, DESKTOP, DOCUMENTS, DEVELOPER
-        if available.
+        """
 
         Dataframe Functions:
             - open() : opens a path file and converts it into a dataframe
@@ -312,7 +190,6 @@ class FolderPath:
                 print(dt_warning)
                 print("reprocessing with lower_memory arg...")
                 return pd.read_csv(file_path, low_memory=False, *args, **kwargs)
-
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)
         try:
@@ -325,6 +202,23 @@ class FolderPath:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
     def open_as_document(self, file_path: str | Path, *args, **kwargs) -> Document:
+        """opens the file path as a Document object.
+
+        Document objects have a series of functionality not available to a standard Dataframe.
+
+        Document Functions:
+            - open_as_document(): opens a path file and converts it into a document object
+            - open_recent_as_document(): opens the most recent Path file and converts it into a document object
+            - check_columns(): checks that the columns exist in the DataFrame
+            - move_file(): moves the Document to a specified location
+            - chunk(): splits a large dataframe into smaller chunk-sized DataFrames, useful if there's an upload limit
+            - as_ordered_transaction(): converts a document file into an aggregated dataframe, with cumsum aggregation
+
+        :param file_path: path to the file you want to open as a document
+        :param args: see documentation for pd.DataFrame object
+        :param kwargs: see documentation for pd.DataFrame object
+        :return: a Document object
+        """
         df = self.open(file_path, *args, **kwargs)
         return Document(df=df, path=file_path)
 
@@ -356,7 +250,7 @@ class FolderPath:
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> Document:
         """
-        Please refer to documentation on open_recent().
+        Please refer to documentation on open_recent() and open_as_document().
         The difference is that this function returns a Document object.
 
         :param filename_pattern: the naming convention for the file you are searching
