@@ -1,6 +1,6 @@
 import os.path
 from datetime import date, timedelta
-from pathlib import Path
+from pathlib import Path, PosixPath
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.error import HTTPError
@@ -10,71 +10,61 @@ import pandas.errors
 
 import chardet
 
+from dirlin.src.base.document import Document
 
-class Document:
-    def __init__(self, df: pd.DataFrame, path: Path):
-        self.dataframe: pd.DataFrame = df
-        self.filepath: Path = path
 
-    def check_columns(self, headers: list[str], match_all: bool = True, raise_error: bool = True) -> bool:
+class Directory:
+    def __init__(self, path: str | Path | None = None, initialize_posix_path: bool = True):
+        """object used for directory level data wrangling. Can think of directories as a collection
+        of Folders, where the Folder object handles different functionality for processing, while the
+        Directory object keeps them organized.
+
+        For macOS, we have extra fields we can use - DOWNLOADS, DESKTOP, DOCUMENTS, DEVELOPER
+        if available.
+
+        ...
+
+        Attributes:
+            - path: the directory path the folder is set to. If left as None, the path will be set to the downloads
+            folder for macOS. Windows currently not supported.
+            - initialize_posix_path: assumes the script is on a macOS directory
+
+        :param folder: initializes a Folder.folder FolderPath object
+        :param initialize_posix_path: initializes default macOS folders
         """
-        Checks the dataframe to confirm that expected columns are in the data.
+        _curr_folder_directory = Path.cwd().home()
 
-        :param headers: the headers to check for
-        :param match_all: defaults to confirm every column is in data. When False, confirms if any columns is in data
-        :param raise_error: defaults to raising error for missing column. When False, only returns bool
-        :return: True if all columns are present. False if any or all columns are missing (param dependent)
-        """
-        if match_all is True:
-            if any([h in self.dataframe.columns for h in headers]) is False:
-                if raise_error:
-                    raise KeyError(f"Missing on or all expected columns {headers} in {self.filepath.stem} file.")
-                return False
-            return True
+        self.DOWNLOADS: Folder | None = None
+        self.DESKTOP: Folder | None = None
+        self.DOCUMENTS: Folder | None = None
+        self.DEVELOPER: Folder | None = None
 
-        if any([h in self.dataframe.columns for h in headers]) is True:
-            return True
-        else:
-            if raise_error:
-                raise KeyError(f"Missing all expected columns {headers} in {self.filepath.stem} file.")
-            return False
+        # adding the macOS only directory paths, so we don't have to define these in the future and they are included
+        if initialize_posix_path is True:
+            if isinstance(_curr_folder_directory, PosixPath):
+                print(f"Adding macOS specific default directories...")
+                self.DOWNLOADS = Folder(_curr_folder_directory / "Downloads")
+                self.DESKTOP = Folder(_curr_folder_directory / "Desktop")
+                self.DOCUMENTS = Folder(_curr_folder_directory / "Documents")
 
-    def move_file(self, destination: Path):
-        """
-        Moves the current file you are working with to another folder or destination.
+                try:
+                    self.DEVELOPER = Folder(_curr_folder_directory / "Developer")
+                except AttributeError:
+                    print(f"Developer folder has not been created yet on this mac.")
 
-        :param destination: the full path (including filename) of the Path object
-        :return: the new path (also changes state of object in self.filepath)
-        """
-        try:
-            self.filepath = self.filepath.rename(target=destination)
-        except Exception as e:
-            raise e
-        return self.filepath
+        if path is None:
+            path = self.DOWNLOADS.path
 
-    def check_max(self, column: str):
-        """
-        Checks the max for the column
+        self.folder: Folder = Folder(path)
+        """argument given by user pointing to a specific directory"""
 
-        :param column: Column name that you want to check for max values
-        :return: The max value in the column
-        """
-        return self.dataframe[column].max()
-
-    def check_min(self, column: str):
-        """
-        Checks the min value for the column
-
-        :param column: column that you want to check for min values
-        :return: the minimum value of the column
-        """
-        return self.dataframe[column].min()
+    def __truediv__(self, other) -> Path:
+        return self.folder / other
 
 
 class Folder:
-    def __init__(self, folder_path: Path | str):
-        """Object used for processing files through local directories.
-        Good for partially built out automated processes that can be done on a single computer.
+    def __init__(self, path: Path | str | None = None):
+        """
 
         Dataframe Functions:
             - open() : opens a path file and converts it into a dataframe
@@ -92,19 +82,19 @@ class Folder:
         ...
 
             Attributes:
-                - path: the directory path the folder is set to
+                - path: the directory path the folder is set to. If left as None, the path will be set to the downloads
+                folder for macOS. Windows currently not supported.
+                - initialize_posix_path: assumes the script is on a macOS directory
 
-        :param folder_path: Path to the Folder. This is the directory the functions will use to search files in
+        :param path: Path to the Folder. This is the directory the functions will use to search files in
         """
-        if isinstance(folder_path, str):
-            folder_path = Path(folder_path)
-        self.path = folder_path
+        if isinstance(path, str):
+            path = Path(path)
+        self.path = path
 
         if not self.path.is_dir():
             raise ValueError(f"Expected a path to a folder / directory. Got {self.path}.")
 
-        # (8) wanted to add a way to get the path of open_recent
-        # adding the property here
         self.path_open_recent: Path | None = None
         """stores the most recent path used on self.open_recent or self.open_recent_as_document()"""
 
@@ -113,6 +103,9 @@ class Folder:
 
     def __str__(self):
         return f"{self.path}"
+
+    def __truediv__(self, other) -> Path:
+        return Path(self.path) / other
 
     def _find_recent_files(
             self,
@@ -193,7 +186,10 @@ class Folder:
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
                     return pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
-
+            except pd.errors.DtypeWarning as dt_warning:
+                print(dt_warning)
+                print("reprocessing with lower_memory arg...")
+                return pd.read_csv(file_path, low_memory=False, *args, **kwargs)
         elif file_path.suffix == ".json":
             return pd.read_json(file_path, *args, **kwargs)
         try:
@@ -206,6 +202,23 @@ class Folder:
             raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
 
     def open_as_document(self, file_path: str | Path, *args, **kwargs) -> Document:
+        """opens the file path as a Document object.
+
+        Document objects have a series of functionality not available to a standard Dataframe.
+
+        Document Functions:
+            - open_as_document(): opens a path file and converts it into a document object
+            - open_recent_as_document(): opens the most recent Path file and converts it into a document object
+            - check_columns(): checks that the columns exist in the DataFrame
+            - move_file(): moves the Document to a specified location
+            - chunk(): splits a large dataframe into smaller chunk-sized DataFrames, useful if there's an upload limit
+            - as_ordered_transaction(): converts a document file into an aggregated dataframe, with cumsum aggregation
+
+        :param file_path: path to the file you want to open as a document
+        :param args: see documentation for pd.DataFrame object
+        :param kwargs: see documentation for pd.DataFrame object
+        :return: a Document object
+        """
         df = self.open(file_path, *args, **kwargs)
         return Document(df=df, path=file_path)
 
@@ -237,7 +250,7 @@ class Folder:
             with_asterisks: bool = True,
             recurse: bool = False, *args, **kwargs) -> Document:
         """
-        Please refer to documentation on open_recent().
+        Please refer to documentation on open_recent() and open_as_document().
         The difference is that this function returns a Document object.
 
         :param filename_pattern: the naming convention for the file you are searching

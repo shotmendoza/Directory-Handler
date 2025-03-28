@@ -1,6 +1,7 @@
 import inspect
 from typing import Callable, Any, TypeVar
 
+
 class Check:
     def __init__(
             self,

@@ -1,9 +1,10 @@
 """This is the quick pipeline"""
+from typing import Any
+
 import pandas as pd
 
 from dirlin import Folder, Path
-from dirlin.pipeline.data_quality.manager import ValidationType
-from dirlin.pipeline.data_quality.report import ReportType
+from dirlin.src.pipeline.data_quality.report import ReportType
 
 
 class Pipeline:
@@ -26,7 +27,7 @@ class Pipeline:
         self._folder = folder
         """The folder path where the Pipeline will search"""
 
-        self.report_name_validation_pairs: dict[str: ValidationType] = dict()
+        self.report_name_validation_pairs: dict[str: Any] = dict()
         """`Report Name: Validation` key-value pairs used for running the checks and keeping the context
         of which report to run with which validation. These have a one-to-one relationship, even
         if some of the reports have a common validation set.
@@ -61,7 +62,7 @@ class Pipeline:
     def add_report_set(
             self,
             report: ReportType,
-            validation: ValidationType,
+            validation: Any,
             *,
             normalize_cash_columns: bool = False,
             drop_duplicate_columns: bool = False,

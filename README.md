@@ -35,18 +35,20 @@ This will make it easier to pull files from your local directory to work on diff
 
 ```python
 # object.py
-from dirlin import Path, Folder  # 1 - import path and folder objects
+from dirlin import Path, FolderPath  # 1 - import path and folder objects
+
+
 class LocalHelper:  # 2 - define the Helper Object
     _base_path = Path("path to directory")
-    
-    DOWNLOADS = Folder(_base_path / "Folder1")  # 3 - create the folders
-    DESKTOP = Folder(_base_path / "Folder2")
+
+    DOWNLOADS = FolderPath(_base_path / "Folder1")  # 3 - create the folders
+    DESKTOP = FolderPath(_base_path / "Folder2")
 
     @classmethod
     def new_folder(cls, folder: str | Path):  # 4 - create a function to create new folders
         if isinstance(folder, str):
             folder = Path(folder)
-        return Folder(folder)
+        return FolderPath(folder)
 ```
 ### Getting the most recently downloaded file
 
@@ -58,13 +60,15 @@ df = LocalHelper.DOWNLOADS.open_recent(filename)
 ```
 
 ### Combining Multiple Excel documents into a single file
+
 ```python
-from dirlin import Folder, Path
+from dirlin import FolderPath, Path
+
 
 def get_most_recent(filename):
     _base_path = Path("path to directory")
-    folder = Folder(_base_path / "Folder1")
-    
+    folder = FolderPath(_base_path / "Folder1")
+
     combined_df = folder.find_and_combine(filename_pattern=filename)  # combines documents 
     return combined_df
 ```
@@ -80,8 +84,10 @@ The Pipeline uses 4 different objects:
 4. `Validation` - defines all the checks you want to run in the pipeline
 
 ### Setting up a Report
+
 ```python
-from dirlin.pipeline import Report
+from dirlin.src.pipeline import Report
+
 report = Report(
     name_convention="ohlcv",  # name of the file you are looking for
     field_mapping={'High': 'high', 'Low': 'low'},  # the name you want to update the fields to
@@ -96,12 +102,14 @@ Let's say that you want to add a check to make sure that values in `low` is neve
 than the values in `high`. We'll walk through how to quickly set that up.
 
 ```python
-from dirlin.pipeline import Check
+from dirlin.src.pipeline import Check
+
 
 def low_never_higher_than_high(low: float, high: float):
-    if  high <= low:
+    if high <= low:
         return False
     return True
+
 
 new_check = Check(low_never_higher_than_high)
 ```
@@ -112,11 +120,12 @@ new_check = Check(low_never_higher_than_high)
 ...
 
 ### Bringing it Together
+
 ```python
-from dirlin.pipeline import Pipeline, Report
+from dirlin.src.pipeline import Pipeline, Report
 
 f = "folder path"
-pipeline =  Pipeline(f)
+pipeline = Pipeline(f)
 
 report = Report("ohlcv", {"High": "high", "Low": "low"})
 df = pipeline.get_worksheet("ohlcv", report=report)
