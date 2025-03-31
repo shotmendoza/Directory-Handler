@@ -1,3 +1,5 @@
+"""For the classic Dirlin Folders"""
+
 import os.path
 from datetime import date, timedelta
 from pathlib import Path, PosixPath
@@ -297,7 +299,8 @@ class Folder:
             self,
             filename_pattern: str = "",
             with_asterisks: bool = True,
-            recurse: bool = False, *args, **kwargs) -> pd.DataFrame:
+            recurse: bool = False,
+            only_first_x: int | None = None, *args, **kwargs) -> pd.DataFrame:
         """
         Uses a filename pattern to find all files that follow the naming convention
         and converts the files into a single DataFrame object6
@@ -307,11 +310,13 @@ class Folder:
         filename pattern
 
         :param recurse: defaults to False. Determines whether to search for sub-folders
+        :param only_first_x: defaults to None. Determines whether to only look at the first x files to combine.
+        don't use this parameter if you are unsure of the number of files in the folder
         :param args: args used in pd.DataFrame objects
         :param kwargs: keyword args used in pd.DataFrame objects
         :return: a DataFrame object of all the files that share similar naming conventions in a folder
         """
-
+        # formatting the filename pattern convention and handling asterisks
         asterisks_mapping = {
             True: f"{filename_pattern}*",
             False: filename_pattern
@@ -319,6 +324,7 @@ class Folder:
         if not with_asterisks and filename_pattern == "":
             raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
+        # handling finding the files with recursion or not
         df = None
         if recurse:
             files = [
@@ -333,7 +339,19 @@ class Folder:
                 ) if not f.name.startswith("~") and not f.name.startswith(".")
             ]
 
+        # handling the only_first_x param
         files = sorted(files, key=os.path.getmtime, reverse=True)
+        if only_first_x is not None:
+            try:
+                files = files[: only_first_x]
+            except IndexError:
+                print(f"only_first_x arg  was too large ({only_first_x}) compared to found files ({len(files)})")
+                print(f"keeping the length of the files")
+            else:
+                if only_first_x < 0:
+                    raise ValueError(f"The value of only_first_x must be a positive integer. Got ({only_first_x}).")
+
+        # handling the combining of files
         for file in files:
             if file.is_dir():
                 """

@@ -1,3 +1,5 @@
+"""Part of the Dirlin Pipeline"""
+
 import dataclasses
 import inspect
 from typing import Any, Callable
