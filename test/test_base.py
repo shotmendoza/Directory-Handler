@@ -2,6 +2,8 @@ from dirlin import Directory
 
 
 def test_init_on_mac():
-    d = Directory()
+    """added new functionality for creating MacOS folders
 
+    """
+    d = Directory()
     print(d.folder)
