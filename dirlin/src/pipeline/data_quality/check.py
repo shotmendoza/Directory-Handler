@@ -1,3 +1,5 @@
+"""CURRENTLY DEPRECATED (2025.04.30)"""
+
 import inspect
 from typing import Callable, Any, TypeVar
 

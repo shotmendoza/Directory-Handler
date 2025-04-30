@@ -1,4 +1,4 @@
-"""Part of the Dirlin Pipeline"""
+"""Part of the Dirlin Pipeline 2.0 (2025.04.30)"""
 
 import dataclasses
 import inspect
@@ -201,6 +201,7 @@ class BaseValidation:
 
     _validator: _BaseValidationVerifier = _BaseValidationVerifier
     _formatter: DirlinFormatter = DirlinFormatter()
+    """class level utility functions for parsing strings, numbers, and pd.Series"""
 
     @classmethod
     def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
@@ -215,8 +216,18 @@ class BaseValidation:
 
         # STEP 2: INITIALIZE to create all the maps, to prepare for running the checks
         function_name_to_args_mapping = cls._map_function_to_args(df)  # gives me the func_name and (param and arg) tup
+        """function used to pull the check functions, which includes the name, params, and args.
+        This creates associations between the checks we have with the report columns we want to use as arguments.
+        """
         function_mapping = cls._get_all_functions_in_class()  # gives me each function to iterate through
+        """creates a mapping of the check_name, and the actual function code that goes with it.
+        Helpful for creating an iterable for the next few steps
+        """
         function_to_function_type_map = cls._map_function_to_function_type()  # gives me the function type (param?)
+        """current limitation of the pipeline, but this function determines the parameter types, and ensures that
+        we return the current type. This is needed because we can't return scalar values when the parameters are
+        expecting a Series type.
+        """
 
         # STEP 3: RUN THE CHECKS
         results = cls._process_function_with_args(

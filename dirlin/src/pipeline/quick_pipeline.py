@@ -1,4 +1,4 @@
-"""This is the quick pipeline"""
+"""CURRENTLY DEPRECATED (2025.04.30) - This is the quick pipeline"""
 from typing import Any
 
 import pandas as pd

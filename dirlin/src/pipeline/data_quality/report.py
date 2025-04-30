@@ -1,3 +1,5 @@
+"""CURRENTLY DEPRECATED (2025.04.30)"""
+
 from typing import TypeVar
 
 import pandas as pd
