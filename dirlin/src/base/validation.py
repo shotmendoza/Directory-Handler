@@ -179,10 +179,21 @@ class BaseValidation:
     """object used for Validation objects in order to help in reusing the same set of checks
     over different reports.
 
-    The class should be inherited by a base set of classes `BaseChecks(BaseValidation)`, where
-    the `BaseChecks` class has a defined set of checks.
+    ...
 
-    The object inheriting BaseValidation class then uses the check function, `example_function = defined function`
+    The class should be inherited by a base set of classes `MyValidationSet(BaseValidation)`, where
+    the `MyValidationSet` has defined checks as we will go over below. You could then layer these checks by
+    inheriting the previous class SecondLayerValidation(MyValidationSet) with its own set of checks.
+
+    The object inheriting BaseValidation class then uses the check function, `function_name = defined_function`
+
+    ...
+
+    For any columns that don't match directly with the parameter name, you can use `alias_mapping` to tie the parameter
+    to the field name. Ex: `{price: [Total Price,], loss: [Total Loss,]}`
+
+    We could even treat the alias_mapping as a dictionary,
+    defining it as `alias_mapping[price] = [Total Price,]` and repeating for each parameter we want to define.
     """
 
     alias_mapping: dict[str, list | str] | None = dict()
