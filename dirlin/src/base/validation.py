@@ -479,13 +479,13 @@ class BaseValidation:
 
         :return: a dictionary key-value pair of `check_name: check_function`
         """
-        base_functions = {
-            check: function for check, function in cls.__base__.__dict__.items() if inspect.isfunction(function)
-        }
-        curr_functions = {
-            check: function for check, function in cls.__dict__.items() if inspect.isfunction(function)
-        }
-        return base_functions | curr_functions
+        all_functions = dict()
+        for validation_class in cls.__mro__[:-1]:
+            temp_functions = {
+                check: function for check, function in validation_class.__dict__.items() if inspect.isfunction(function)
+            }
+            all_functions = all_functions | temp_functions
+        return all_functions
 
     @classmethod
     def _get_all_params_in_class(cls) -> dict:
