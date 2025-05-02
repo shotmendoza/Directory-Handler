@@ -145,7 +145,7 @@ class _BaseValidationVerifier:
         missing_params = []
         for param, args in params.items():
             try:
-                column_mapping[param]
+                column_mapping[param]  # param name is not a column name
             except KeyError:
                 if args is None:  # because `get_all_params_in_class` will make the value a list from alias or None
                     missing_params.append(param)
