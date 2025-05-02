@@ -4,3 +4,4 @@ xlrd==2.0.1
 openpyxl
 pandas==2.0.2
 chardet==5.2.0
+numpy<2.0.0
