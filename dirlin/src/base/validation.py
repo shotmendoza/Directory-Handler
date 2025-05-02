@@ -367,6 +367,8 @@ class BaseValidation:
             one_to_many = {}
             for param, fields in param_mapping.items():
                 if param in param_set:  # if this param is part of the check
+                    if isinstance(fields, str):
+                        fields = [fields,]
                     if len(fields) == 1:  # only one field associated with the param. Previously known as static
                         one_to_one[param] = fields[0]
                     elif len(fields) > 1:
