@@ -216,12 +216,15 @@ class BaseValidation:
 
     @classmethod
     def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
+        # STEP 0: 2025/05/02 adding the alias pull here for visibility
+        cls.alias_mapping = cls._get_all_alias_mapping_in_class()  # should pull alias from subclass too
+
         # STEP 1: VALIDATE to validate that the class was set up correctly and is usable (GLOBAL)
         _verify = cls._validator(
             df,
             cls._get_function_return_type(),
             cls._get_function_param_and_type(),
-            cls._get_all_params_in_class(),
+            cls._map_param_to_alias(),
             cls.alias_mapping,
         ).check_all()
 
@@ -393,19 +396,35 @@ class BaseValidation:
     @classmethod
     def _map_param_to_columns(cls, df: pd.DataFrame) -> dict[str, Any]:
         """creates the actual mapping between the parameter and the columns associated with it,
-        `_get_all_params_in_class` ties out the alias to the parameters. This class then goes
+        `_map_param_to_alias` ties out the alias to the parameters. This class then goes
         one step further by adding any columns that match the name of the parameter.
 
         :param df: the dataframe we want to use
         :return: dictionary with key-value pair of `{parameter: [column, alias]}`
         """
-        params = cls._get_all_params_in_class()
-        param_column_mapping = {
-            param: [column,] if alias_names is None and param == column
-            else alias_names.append(column) if param == column and isinstance(alias_names, list)
-            else alias_names
-            for param, alias_names in params.items() for column in df.columns.values
-        }
+        params = cls._map_param_to_alias()
+        column_mapping = {column: True for column in df.columns}
+        param_column_mapping = dict()
+
+        for param, alias_names in params.items():
+            try:
+                column_mapping[param]  # checks if the parameter has direct match in dataframe
+                if param not in param_column_mapping:
+                    param_column_mapping[param] = [param]  # we want to start it in list form
+                elif isinstance(param_column_mapping[param], list):
+                    param_column_mapping[param].append(param)
+                elif isinstance(param_column_mapping[param], str):
+                    param_column_mapping[param] = [param_column_mapping[param], param]
+                else:
+                    raise TypeError(f"{type(param_column_mapping[param])} is not a list or str")
+            except KeyError as KE:  # parameter name was not in the dataframe columns
+                # we should check if there's an alias
+                if alias_names is None:
+                    raise KE
+
+                # At this point we are assuming that there is an alias name and no matching column
+                # Now we add the params based on the number of alias we see
+                param_column_mapping[param] = alias_names
         return param_column_mapping
 
     @classmethod
@@ -482,7 +501,7 @@ class BaseValidation:
         :return: a dictionary key-value pair of `check_name: check_function`
         """
         all_functions = dict()
-        for validation_class in cls.__mro__[:-1]:
+        for validation_class in cls.__mro__[:-2]:
             temp_functions = {
                 check: function for check, function in validation_class.__dict__.items() if inspect.isfunction(function)
             }
@@ -490,7 +509,7 @@ class BaseValidation:
         return all_functions
 
     @classmethod
-    def _get_all_params_in_class(cls) -> dict:
+    def _map_param_to_alias(cls) -> dict:
         """private helper function used to flatten the `get_function_param()` dictionary
         and return a dictionary of all parameters in the class. Helps to map columns to
         a parameter that's in the class
@@ -513,3 +532,15 @@ class BaseValidation:
                         if param in cls.alias_mapping:  # adding the user defined param-column pairing
                             all_params[param] = cls.alias_mapping[param]
         return all_params
+
+    @classmethod
+    def _get_all_alias_mapping_in_class(cls) -> dict:
+        """private helper function used to get the alias mapping from all previous subclasses without
+        overwriting previous values
+        """
+        all_alias_mapping = dict()
+        for subclass in cls.__mro__[:-1]:
+            if "alias_mapping" in subclass.__dict__:
+                temp = subclass.__dict__["alias_mapping"]
+                all_alias_mapping = all_alias_mapping | temp
+        return all_alias_mapping
