@@ -42,12 +42,12 @@ class TestPipeLine:
 
     def test_pipeline_run_with_validation(self):
         qp = Pipeline(self.f, report=self.report_for_formatting)
-        qp.run_validation(self.validation)
+        qp._run_validation(self.validation)
 
     def test_pipeline_run_without_report_error(self):
         with pytest.raises(AttributeError) as ae:
             qp = Pipeline(self.f)
-            qp.run_validation(validation=self.validation)
+            qp._run_validation(validation=self.validation)
         assert (
                 str(ae.value) == "Will need to run Pipeline.get_worksheet() "
                                  "or use a Report as an argument in Pipeline init."

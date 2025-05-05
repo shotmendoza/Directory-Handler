@@ -38,12 +38,19 @@ class TestSecondLayer(TestBaseValidation):
 def test_class_works_as_expected():
     t_bv = TestBaseValidation()
     t_df = example_df()
-    t_bv.run_validation(t_df)
+    t_bv._run_validation(t_df)
 
 
 def test_second_layer_works():
     t_bv = TestSecondLayer()
     t_df = example_two_df()
-    t_bv.run_validation(t_df)
+    t_bv._run_validation(t_df)
 
     print(t_bv.alias_mapping)
+
+
+def test_run_summary_on_second_layer():
+    t_bv = TestSecondLayer()
+    t_df = example_two_df()
+    t_bv.run_summary(t_df)
+    print(t_bv.run_summary(t_df))

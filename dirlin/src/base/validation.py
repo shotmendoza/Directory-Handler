@@ -17,12 +17,16 @@ class _ResultWrapper:
     Fields:
         - `result`: a pd.Series type variable that holds the results from running the function
         - `check_name`: a str type variable that holds the string name of the check that will be put in the deliverable
+        the name is the name of all the parameters combined, and currently, not the name of the function
     """
     result: pd.Series
     """stores the results of the validation in the BaseValidation object"""
 
     check_name: str
     """stores the name of the check that will be put in the deliverable"""
+
+    function_name: str
+    """name of the function we are running"""
 
 
 class _BaseValidationVerifier:
@@ -215,7 +219,14 @@ class BaseValidation:
     """class level utility functions for parsing strings, numbers, and pd.Series"""
 
     @classmethod
-    def run_validation(cls, df: pd.DataFrame) -> dict[str, dict]:
+    def _run_validation(cls, df: pd.DataFrame) -> dict[str, _ResultWrapper]:
+        """main function for BaseValidation, and runs the validation functions under the class,
+        and returns a dictionary.
+
+        Parameters:
+            - df: pd.DataFrame -> accepts a dataframe and will return the pass / fail for each check
+
+        """
         # STEP 0: 2025/05/02 adding the alias pull here for visibility
         cls.alias_mapping = cls._get_all_alias_mapping_in_class()  # should pull alias from subclass too
 
@@ -252,6 +263,26 @@ class BaseValidation:
         )
         return results
 
+    def run_summary(self, df: pd.DataFrame) -> pd.DataFrame:
+        """creates a basic summary dataframe with the pass / fail for each check.
+
+        Columns:
+            - Check Function Name: name of the function used for the validation
+            - Total Records Validated: the number of records that were validated in total
+            - Total Records Passed: the number of records that successfully passed the validation
+            - Total Records Failed: the number of records that failed the validation
+        """
+        results = self._run_validation(df)
+        summary = {
+            check_name: {
+                "Check Function Name": r.function_name,
+                "Total Records Validated": r.result.count(),
+                "Total Records Passed": r.result[r.result == True].sum(),
+                "Total Records Failed": r.result[r.result == False].sum(),
+            } for check_name, r in results.items()
+        }
+        return pd.DataFrame(summary).T
+
     @classmethod
     def _process_function_with_args(
             cls,
@@ -261,7 +292,7 @@ class BaseValidation:
             function_type_map: dict[str, bool],  # true is series
             function_args: dict[str, list[dict]],
 
-    ) -> dict:
+    ) -> dict[str, _ResultWrapper]:
         """identifies the type of function we are dealing with, and will run the
         function and its arguments according to its needs. For example, a parameter of type pd.Series will
         run differently than a function running based on float.
@@ -278,17 +309,18 @@ class BaseValidation:
             param_args_list = function_args[function_name]  # should be list of {param: col}
             match function_type_map[function_name]:
                 case True:
-                    result = cls._process_function_as_series_function(function, df, param_args_list)
+                    result = cls._process_function_as_series_function(function, function_name, df, param_args_list)
                 case _:
-                    result = cls._process_function_as_scalar_function(function, df, param_args_list)
-            temp = {r.check_name: r.result for r in result}  # todo only needs to be a list from result
-            results = results | temp
+                    result = cls._process_function_as_scalar_function(function, function_name, df, param_args_list)
+            temp = {r.check_name: r for r in result}
+            results = results | temp  # todo 2025.05.05 thinking this needs to be the ResultsWrapper to make API clear
         return results
 
     @classmethod
     def _process_function_as_series_function(
             cls,
             function: Callable,
+            function_name: str,
             df: pd.DataFrame,
             args_list: list[dict[str, str]]
     ) -> list[_ResultWrapper]:
@@ -308,15 +340,21 @@ class BaseValidation:
                 param: df[column] for param, column in args_pair.items()
             } for args_pair in args_list
         }  # this should look like `check_name`: `{param: pd.Series}` aka args_pair
+        # want to note that args_pair does not return check_name, as the name of the function, but
+        # will return as the combination of all the parameters
 
         # list comprehension to get all the results as a list
-        deliverable = [_ResultWrapper(function(**args), name) for name, args in new_keys.items()]
+        deliverable = [
+            _ResultWrapper(result=function(**args), check_name=name, function_name=function_name)
+            for name, args in new_keys.items()
+        ]
         return deliverable
 
     @classmethod
     def _process_function_as_scalar_function(
             cls,
             function: Callable,
+            function_name: str,
             df: pd.DataFrame,
             args_list: list[dict[str, str]]
     ) -> list[_ResultWrapper]:
@@ -346,7 +384,9 @@ class BaseValidation:
             # We need to iterate through these new results we just received
             results = [function(**args) for args in list_of_temp_args]
             check_name = cls._formatter.convert_dict_to_ref_names(args_pair)
-            deliverable.append(_ResultWrapper(result=pd.Series(results), check_name=check_name))
+            deliverable.append(
+                _ResultWrapper(result=pd.Series(results), check_name=check_name, function_name=function_name)
+            )
         return deliverable
 
     @classmethod

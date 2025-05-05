@@ -81,7 +81,7 @@ def test_basic_one_function():
     # the name of the parameters, we should get a specific
     # KeyError raised (column names A, B, C don't directly match with a, b, c)
     with pytest.raises(KeyError) as KE:
-        single_layer.run_validation(df=df)
+        single_layer._run_validation(df=df)
         assert KE.match("Missing columns")
 
     # (4) Since we identified columns that don't match with parameters,
@@ -93,12 +93,12 @@ def test_basic_one_function():
     # (5) Because our BadSingleLayerObject's function does not have a
     # return type, we should also error out on that validation
     with pytest.raises(ValueError) as VE:
-        single_layer.run_validation(df=df)
+        single_layer._run_validation(df=df)
         assert VE.match("is missing a return type")
 
     # (6) we rerun the validation and don't get an error this time
     single_layer = SimpleSingleLayerObject()
-    result = single_layer.run_validation(df=df)
+    result = single_layer._run_validation(df=df)
     assert isinstance(result, dict)
     print()
     print(result)
@@ -109,5 +109,5 @@ def test_series_based_functions():
 
     """
     validation = BadSeriesLayerObject()
-    p = validation.run_validation(df=example_dataframe_factory())
+    p = validation._run_validation(df=example_dataframe_factory())
     print(p)  # we get a {check_name: pd.Series}
