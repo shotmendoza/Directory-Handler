@@ -132,9 +132,11 @@ class DirlinFormatter:
     @classmethod
     def convert_percentage_to_float(cls, percentage_field: pd.Series) -> pd.Series:
         """formats a percentage column into a float column
-
         """
-        percentage_field = percentage_field.fillna("0").str.rstrip('%').astype(float) / 100  # todo conditional on val
+        try:
+            percentage_field = percentage_field.fillna("0").str.rstrip('%').astype(float) / 100  # todo cond. on %
+        except AttributeError:
+            percentage_field = percentage_field.fillna(0).astype(float) / 100
         return pd.Series(percentage_field)
 
     @classmethod

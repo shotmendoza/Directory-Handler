@@ -2,7 +2,7 @@
 
 import dataclasses
 import inspect
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -16,13 +16,14 @@ class _ResultWrapper:
 
     Fields:
         - `result`: a pd.Series type variable that holds the results from running the function
-        - `check_name`: a str type variable that holds the string name of the check that will be put in the deliverable
-        the name is the name of all the parameters combined, and currently, not the name of the function
+        - `parameters_used`: a str type variable that holds the string name of the check that will be put in the
+        deliverable the name is the name of all the parameters combined, and currently, not the name of the function
+        - `function_name`: a str type variable signifying the name of the function used to validate
     """
     result: pd.Series
     """stores the results of the validation in the BaseValidation object"""
 
-    check_name: str
+    parameters_used: str
     """stores the name of the check that will be put in the deliverable"""
 
     function_name: str
@@ -218,45 +219,6 @@ class BaseValidation:
     you to add missing parameters into this variable as a dict.
     """
 
-    # @property
-    # def alias_mapping(self) -> dict[str, list | str] | None:
-    #     """used to define columns that don't exact-match a parameter in the object,
-    #     but we want to use as an argument in the parameter.
-    #
-    #     For example, if we have a column `Total Price` but our test function uses `price`
-    #     as the parameter of the function, we would add `Total Price` as the value under
-    #     `price` in the alias_mapping key-value pair. This would look like this:
-    #     `{"price": ["Total Price]"}`.
-    #
-    #     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
-    #     the function. The error code for `_verify_column_ties_to_parameter` will also notify
-    #     you to add missing parameters into this variable as a dict.
-    #     """
-    #     return self._get_all_alias_mapping_in_class()
-    #
-    # @alias_mapping.setter
-    # def alias_mapping(self, value: dict[str, list | str] | None) -> None:
-    #     """used to define columns that don't exact-match a parameter in the object,
-    #     but we want to use as an argument in the parameter.
-    #
-    #     For example, if we have a column `Total Price` but our test function uses `price`
-    #     as the parameter of the function, we would add `Total Price` as the value under
-    #     `price` in the alias_mapping key-value pair. This would look like this:
-    #     `{"price": ["Total Price]"}`.
-    #
-    #     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
-    #     the function. The error code for `_verify_column_ties_to_parameter` will also notify
-    #     you to add missing parameters into this variable as a dict.
-    #     """
-    #     if isinstance(value, dict):
-    #         for parameter, column in value.items():
-    #             #  doing this because we want to add to the list of possible values it can take
-    #             if parameter in self.alias_mapping:
-    #                 if isinstance(self.alias_mapping[parameter], str):
-    #                     self.alias_mapping[parameter] = [self.alias_mapping[parameter]]
-    #                 self.alias_mapping[parameter].append(column)
-
-
     @classmethod
     def _run_validation(cls, df: pd.DataFrame) -> dict[str, _ResultWrapper]:
         """main function for BaseValidation, and runs the validation functions under the class,
@@ -302,7 +264,7 @@ class BaseValidation:
         )
         return results
 
-    def run_summary(self, df: pd.DataFrame) -> pd.DataFrame:
+    def run_summary(self, df: pd.DataFrame, group_name: str | None = None) -> pd.DataFrame:
         """creates a basic summary dataframe with the pass / fail for each check.
 
         Columns:
@@ -312,15 +274,44 @@ class BaseValidation:
             - Total Records Failed: the number of records that failed the validation
         """
         results = self._run_validation(df)
-        summary = {
-            check_name: {
-                "Check Function Name": r.function_name,
-                "Total Records Validated": r.result.count(),
-                "Total Records Passed": r.result[r.result == True].sum(),
-                "Total Records Failed": r.result[r.result == False].sum(),
-            } for check_name, r in results.items()
-        }
-        return pd.DataFrame(summary).T
+
+        # Summary without the validation_name
+        if group_name is None:
+            summary = {
+                check_name: {
+                    "Check Function Name": r.function_name,
+                    "Total Records Validated": r.result.count(),
+                    "Total Records Passed": r.result.sum(),
+                    "Total Records Failed": len(r.result) - r.result.sum(),
+                } for check_name, r in results.items()
+            }
+        else:
+            summary = {
+                group_name: {
+                    "Check Function Name": r.function_name,
+                    "Total Records Validated": r.result.count(),
+                    "Total Records Passed": r.result.sum(),
+                    "Total Records Failed": len(r.result) - r.result.sum(),
+                    "Check Parameters Used": check_name,
+                } for check_name, r in results.items()
+            }
+        return pd.DataFrame(summary).T.reset_index()
+
+    def run_error_log(self, df: pd.DataFrame, group_name: str | None = None) -> pd.DataFrame:
+        """gives you a Dataframe with the records that failed the validation
+        """
+        results = self._run_validation(df)
+
+        results_filter = []
+        for check_name, r in results.items():
+            temp_df = df[~r.result].copy()
+            temp_df["Check"] = r.function_name
+            if group_name is not None:
+                temp_df["Group"] = group_name
+            results_filter.append(temp_df)
+
+        _df_results = pd.concat(results_filter, ignore_index=True)
+        return _df_results
 
     @classmethod
     def _process_function_with_args(
@@ -351,7 +342,7 @@ class BaseValidation:
                     result = cls._process_function_as_series_function(function, function_name, df, param_args_list)
                 case _:
                     result = cls._process_function_as_scalar_function(function, function_name, df, param_args_list)
-            temp = {r.check_name: r for r in result}
+            temp = {r.parameters_used: r for r in result}
             results = results | temp  # todo 2025.05.05 thinking this needs to be the ResultsWrapper to make API clear
         return results
 
@@ -384,7 +375,7 @@ class BaseValidation:
 
         # list comprehension to get all the results as a list
         deliverable = [
-            _ResultWrapper(result=function(**args), check_name=name, function_name=function_name)
+            _ResultWrapper(result=function(**args), parameters_used=name, function_name=function_name)
             for name, args in new_keys.items()
         ]
         return deliverable
@@ -424,7 +415,7 @@ class BaseValidation:
             results = [function(**args) for args in list_of_temp_args]
             check_name = cls._formatter.convert_dict_to_ref_names(args_pair)
             deliverable.append(
-                _ResultWrapper(result=pd.Series(results), check_name=check_name, function_name=function_name)
+                _ResultWrapper(result=pd.Series(results), parameters_used=check_name, function_name=function_name)
             )
         return deliverable
 
@@ -637,22 +628,3 @@ class BaseValidation:
                         overide_param[param] = col
                 all_alias_mapping = all_alias_mapping | overide_param
         return all_alias_mapping
-
-
-# if any(kw in temp.keys() for kw in all_alias_mapping):
-#     new_temp = {}
-#     for param, cols in temp.items():
-#         try:
-#             all_alias_mapping[param]  # see if in dict
-#         except KeyError:  # was not previously defined, so we keep it here for optimization
-#             new_temp[param] = cols
-#         else:  # assuming that the param already exists from higher level object
-#             if isinstance(all_alias_mapping[param], str):  # user-defined str alias_mapping
-#                 all_alias_mapping[param] = [all_alias_mapping[param], ]
-#
-#             if isinstance(cols, list):
-#                 all_alias_mapping[param].extend(col for col in cols)
-#             else:
-#                 all_alias_mapping[param].append(cols)
-#     if new_temp is not None:
-#         temp = new_temp
