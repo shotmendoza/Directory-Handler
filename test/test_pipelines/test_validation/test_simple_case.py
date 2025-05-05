@@ -86,9 +86,9 @@ def test_basic_one_function():
 
     # (4) Since we identified columns that don't match with parameters,
     # we follow the error message, and add in the alias mapping names here directly
-    single_layer.alias_mapping["a"] = ["A",]
-    single_layer.alias_mapping["b"] = ["B",]
-    single_layer.alias_mapping["c"] = ["C",]
+    single_layer.alias_mapping["a"] = ["A", ]
+    single_layer.alias_mapping["b"] = ["B", ]
+    single_layer.alias_mapping["c"] = ["C", ]
 
     # (5) Because our BadSingleLayerObject's function does not have a
     # return type, we should also error out on that validation

@@ -200,23 +200,62 @@ class BaseValidation:
     defining it as `alias_mapping[price] = [Total Price,]` and repeating for each parameter we want to define.
     """
 
+    _validator: _BaseValidationVerifier = _BaseValidationVerifier
+    _formatter: DirlinFormatter = DirlinFormatter()
+    """class level utility functions for parsing strings, numbers, and pd.Series"""
+
     alias_mapping: dict[str, list | str] | None = dict()
     """used to define columns that don't exact-match a parameter in the object,
     but we want to use as an argument in the parameter.
-    
+
     For example, if we have a column `Total Price` but our test function uses `price`
     as the parameter of the function, we would add `Total Price` as the value under
     `price` in the alias_mapping key-value pair. This would look like this:
     `{"price": ["Total Price]"}`.
-    
+
     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
     the function. The error code for `_verify_column_ties_to_parameter` will also notify
     you to add missing parameters into this variable as a dict.
     """
 
-    _validator: _BaseValidationVerifier = _BaseValidationVerifier
-    _formatter: DirlinFormatter = DirlinFormatter()
-    """class level utility functions for parsing strings, numbers, and pd.Series"""
+    # @property
+    # def alias_mapping(self) -> dict[str, list | str] | None:
+    #     """used to define columns that don't exact-match a parameter in the object,
+    #     but we want to use as an argument in the parameter.
+    #
+    #     For example, if we have a column `Total Price` but our test function uses `price`
+    #     as the parameter of the function, we would add `Total Price` as the value under
+    #     `price` in the alias_mapping key-value pair. This would look like this:
+    #     `{"price": ["Total Price]"}`.
+    #
+    #     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
+    #     the function. The error code for `_verify_column_ties_to_parameter` will also notify
+    #     you to add missing parameters into this variable as a dict.
+    #     """
+    #     return self._get_all_alias_mapping_in_class()
+    #
+    # @alias_mapping.setter
+    # def alias_mapping(self, value: dict[str, list | str] | None) -> None:
+    #     """used to define columns that don't exact-match a parameter in the object,
+    #     but we want to use as an argument in the parameter.
+    #
+    #     For example, if we have a column `Total Price` but our test function uses `price`
+    #     as the parameter of the function, we would add `Total Price` as the value under
+    #     `price` in the alias_mapping key-value pair. This would look like this:
+    #     `{"price": ["Total Price]"}`.
+    #
+    #     Is a key-value pair of {`parameter name`: [`associated columns`]}, and will tie into
+    #     the function. The error code for `_verify_column_ties_to_parameter` will also notify
+    #     you to add missing parameters into this variable as a dict.
+    #     """
+    #     if isinstance(value, dict):
+    #         for parameter, column in value.items():
+    #             #  doing this because we want to add to the list of possible values it can take
+    #             if parameter in self.alias_mapping:
+    #                 if isinstance(self.alias_mapping[parameter], str):
+    #                     self.alias_mapping[parameter] = [self.alias_mapping[parameter]]
+    #                 self.alias_mapping[parameter].append(column)
+
 
     @classmethod
     def _run_validation(cls, df: pd.DataFrame) -> dict[str, _ResultWrapper]:
@@ -578,9 +617,42 @@ class BaseValidation:
         """private helper function used to get the alias mapping from all previous subclasses without
         overwriting previous values
         """
-        all_alias_mapping = dict()
+        all_alias_mapping: dict | None = None
         for subclass in cls.__mro__[:-1]:
             if "alias_mapping" in subclass.__dict__:
-                temp = subclass.__dict__["alias_mapping"]
-                all_alias_mapping = all_alias_mapping | temp
+                temp = subclass.__dict__["alias_mapping"]  # holds the user-defined alias_mapping dict
+
+                # initialization of all_alias_mapping
+                # adding here, so we can run different logic once it's up and running
+                if all_alias_mapping is None:
+                    all_alias_mapping = temp
+                    continue
+
+                # now I want to check to ensure we're not overriding values from the higher level classes
+                overide_param = {}
+                for param, col in temp.items():
+                    try:
+                        all_alias_mapping[param]  # check for keyword in dict
+                    except KeyError:  # is a new parameter we want to add
+                        overide_param[param] = col
+                all_alias_mapping = all_alias_mapping | overide_param
         return all_alias_mapping
+
+
+# if any(kw in temp.keys() for kw in all_alias_mapping):
+#     new_temp = {}
+#     for param, cols in temp.items():
+#         try:
+#             all_alias_mapping[param]  # see if in dict
+#         except KeyError:  # was not previously defined, so we keep it here for optimization
+#             new_temp[param] = cols
+#         else:  # assuming that the param already exists from higher level object
+#             if isinstance(all_alias_mapping[param], str):  # user-defined str alias_mapping
+#                 all_alias_mapping[param] = [all_alias_mapping[param], ]
+#
+#             if isinstance(cols, list):
+#                 all_alias_mapping[param].extend(col for col in cols)
+#             else:
+#                 all_alias_mapping[param].append(cols)
+#     if new_temp is not None:
+#         temp = new_temp
