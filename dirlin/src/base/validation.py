@@ -2,7 +2,8 @@
 
 import dataclasses
 import inspect
-from typing import Any, Callable, Optional
+import re
+from typing import Any, Callable, Optional, Literal
 
 import pandas as pd
 
@@ -28,6 +29,9 @@ class _ResultWrapper:
 
     function_name: str
     """name of the function we are running"""
+
+    function_description: str
+    """description of what the function checks for based on docstrings"""
 
 
 class _BaseValidationVerifier:
@@ -254,13 +258,18 @@ class BaseValidation:
         we return the current type. This is needed because we can't return scalar values when the parameters are
         expecting a Series type.
         """
+        function_name_to_docstring_mapping = cls._get_all_function_docstrings()  # gives me the docstrings for the funcs
+        """creates a mapping of {check_name: docstring}, which we use as one of the columns in our final deliverable
+        to describe what each check is accomplishing and checking for.
+        """
 
         # STEP 3: RUN THE CHECKS
         results = cls._process_function_with_args(
             df,
             function_map=function_mapping,
             function_args=function_name_to_args_mapping,
-            function_type_map=function_to_function_type_map
+            function_type_map=function_to_function_type_map,
+            function_docs=function_name_to_docstring_mapping
         )
         return results
 
@@ -274,6 +283,8 @@ class BaseValidation:
             - Total Records Failed: the number of records that failed the validation
         """
         results = self._run_validation(df)
+        # todo this function and run_error_log should both be under the same class Result
+        # this will allow you to do result.run_summary or result.run_validation, result.error_log
 
         # Summary without the validation_name
         if group_name is None:
@@ -283,6 +294,7 @@ class BaseValidation:
                     "Total Records Validated": r.result.count(),
                     "Total Records Passed": r.result.sum(),
                     "Total Records Failed": len(r.result) - r.result.sum(),
+                    "Check Description": r.function_description
                 } for check_name, r in results.items()
             }
         else:
@@ -293,6 +305,7 @@ class BaseValidation:
                     "Total Records Passed": r.result.sum(),
                     "Total Records Failed": len(r.result) - r.result.sum(),
                     "Check Parameters Used": check_name,
+                    "Check Description": r.function_description
                 } for check_name, r in results.items()
             }
         return pd.DataFrame(summary).T.reset_index()
@@ -321,25 +334,35 @@ class BaseValidation:
             function_map: dict,
             function_type_map: dict[str, bool],  # true is series
             function_args: dict[str, list[dict]],
+            function_docs: dict[str, str],
 
     ) -> dict[str, _ResultWrapper]:
         """identifies the type of function we are dealing with, and will run the
         function and its arguments according to its needs. For example, a parameter of type pd.Series will
         run differently than a function running based on float.
 
-        Parameters:
+        Parameter:
+            - function_map: gives you a {check_name: check} mapping that helps with iterating through all checks
             - function_args: gives you a list of parameter to column pairs. Each member of list
             has the same set of parameter keys, but different column values.
+            - function_type_map: gives you the return and parameter types for the functions so we know
+            how to handle them
+            - function_docs: gives you the docstrings for the functions
 
         """
-        # in the future, this may be under the Check class
         results = {}
         for function_name, function in function_map.items():
             # function_args has the same key as function_map
             param_args_list = function_args[function_name]  # should be list of {param: col}
             match function_type_map[function_name]:
                 case True:
-                    result = cls._process_function_as_series_function(function, function_name, df, param_args_list)
+                    result = cls._process_function_as_series_function(
+                        function,
+                        function_name,
+                        df,
+                        param_args_list,
+                        function_docs[function_name],
+                    )
                 case _:
                     result = cls._process_function_as_scalar_function(function, function_name, df, param_args_list)
             temp = {r.parameters_used: r for r in result}
@@ -352,7 +375,8 @@ class BaseValidation:
             function: Callable,
             function_name: str,
             df: pd.DataFrame,
-            args_list: list[dict[str, str]]
+            args_list: list[dict[str, str]],
+            docs: str,
     ) -> list[_ResultWrapper]:
         """processes the class function assuming every parameter has a pd.Series as the param type, and also
         returns a pd.Series type
@@ -363,19 +387,27 @@ class BaseValidation:
 
         :return: _ResultWrapper
         """
+        # Step 1: Iterate Through Args Pair
         # We need this because arg list only gives you the field name and doesn't tie it to an existing DF
-        deliverable = []
         new_keys = {
             cls._formatter.convert_dict_to_ref_names(args_pair, "series"): {
                 param: df[column] for param, column in args_pair.items()
             } for args_pair in args_list
         }  # this should look like `check_name`: `{param: pd.Series}` aka args_pair
         # want to note that args_pair does not return check_name, as the name of the function, but
-        # will return as the combination of all the parameters
+        # will return as the combination of all the parameters (2025/05/05)
 
+        # Adding in the new docstring functionality (2025.05.07)
+
+        # todo 2025.05.07 make the process_function (x2) more OOP -- the ResultWrapper should be handled on level up
         # list comprehension to get all the results as a list
         deliverable = [
-            _ResultWrapper(result=function(**args), parameters_used=name, function_name=function_name)
+            _ResultWrapper(
+                result=function(**args),
+                parameters_used=name,
+                function_name=function_name,
+                function_description=docs,
+            )
             for name, args in new_keys.items()
         ]
         return deliverable
@@ -386,7 +418,8 @@ class BaseValidation:
             function: Callable,
             function_name: str,
             df: pd.DataFrame,
-            args_list: list[dict[str, str]]
+            args_list: list[dict[str, str]],
+            docs: str,
     ) -> list[_ResultWrapper]:
         """processes the class function assuming every parameter has a scalar as the param type, and returns
         a single scalar type as well
@@ -398,24 +431,32 @@ class BaseValidation:
         Note that when you iterate through the args_list, you will get a different combination of columns.
 
         arg_list is from a higher level, and gives you a mapping of the columns involved with the function
-        you are using.
+        you are using. func1(param1: column1, param2: column2, param3: column3)
 
         :return: list of ResultWrappers
         """
         deliverable = []
         for args_pair in args_list:
-            # used for renaming the column to parameter names so that we can unpack as args
-            reversed_param_column_dict = {column: param for param, column in args_pair.items()}
-            temp: pd.DataFrame = df[list(reversed_param_column_dict)].copy()  # filter to keep only function context
-            temp = temp.rename(columns=reversed_param_column_dict)  # rename for arg unpacking
-            list_of_temp_args = temp.to_dict(orient='records')  # now we have a list of `param: args` pair
-            # we can use this list to run through the scalar functions since this is a records dict
+            # Step 1: rename the column names to the parameter names so that we can unpack as args
+            column_rename_map = {column: param for param, column in args_pair.items()}
+            temp: pd.DataFrame = df[list(column_rename_map)].copy()  # filter to keep only function context
+            temp = temp.rename(columns=column_rename_map)  # rename for arg unpacking
 
-            # We need to iterate through these new results we just received
+            # Step 2: convert to a dictionary and unpack the rows in the dataframe in the function
+            # now we have a list of records with corresponding args
+            # we can use this list to run through the scalar functions since this is a records dict
+            list_of_temp_args = temp.to_dict(orient='records')
             results = [function(**args) for args in list_of_temp_args]
+
+            # Step 3: Formatting and Return
             check_name = cls._formatter.convert_dict_to_ref_names(args_pair)
             deliverable.append(
-                _ResultWrapper(result=pd.Series(results), parameters_used=check_name, function_name=function_name)
+                _ResultWrapper(
+                    result=pd.Series(results),
+                    parameters_used=check_name,
+                    function_name=function_name,
+                    function_description=docs,
+                )
             )
         return deliverable
 
@@ -577,6 +618,36 @@ class BaseValidation:
             }
             all_functions = all_functions | temp_functions
         return all_functions
+
+    @classmethod
+    def _get_all_function_docstrings(cls, scope: Literal["first", "all"] = "first") -> dict:
+        """helper function used to extract the function docstrings. This will then be used for the final error log
+        to show the description of what each check is doing based on the docstrings.
+
+        :param scope: ['first', 'all'] determines whether to grab the first sentence of the docstring or to capture
+        the entire docstring. Default is 'first'.
+        """
+        try:
+            all_functions_in_class = cls._get_all_functions_in_class()  # has the check_name: check kv pairs
+            docstring_mapping = dict()
+            for check_name, function in all_functions_in_class.items():
+                docstring = inspect.getdoc(function)
+                if not docstring:
+                    docstring = f"No description for {check_name}."
+                    docstring_mapping[check_name] = docstring
+                    continue
+                # Now assuming we have a docstring, we'll go through the scope param
+                if scope == "all":
+                    docstring_mapping[check_name] = docstring  # just send out what we have
+                    continue
+                elif scope == "first":
+                    # matches for any (.), (!), (?) and or a new line
+                    first = re.match(r"(.*?[.!?])(?:\s|$)|([^\n*]*)", docstring, re.DOTALL)
+                    docstring_mapping[check_name] = (first.group(1) or first.group(2)).strip() if first else docstring
+        except Exception as exc:
+            raise exc
+
+        return docstring_mapping
 
     @classmethod
     def _map_param_to_alias(cls) -> dict:

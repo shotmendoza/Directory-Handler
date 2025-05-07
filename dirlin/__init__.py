@@ -1,6 +1,6 @@
 """Dirlin (Directory Handler), set of tools to help process local files."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.6"
 
 from .src.base.folder import (
     Folder,
@@ -10,3 +10,4 @@ from .src.base.folder import (
 )
 
 from .src.base.validation import BaseValidation
+from .src.base.util import DirlinFormatter
