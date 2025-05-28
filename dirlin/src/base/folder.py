@@ -1,6 +1,7 @@
 """For the classic Dirlin Folders"""
 
 import os.path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path, PosixPath
 from typing import Optional
@@ -11,6 +12,7 @@ import pandas as pd
 import pandas.errors
 
 import chardet
+from tqdm import tqdm
 
 from dirlin.src.base.document import Document
 from dirlin.src.base.util import DirlinFormatter
@@ -104,6 +106,9 @@ class Folder:
         self._format: DirlinFormatter = DirlinFormatter()
         """used for parsing and formatting the user args"""
 
+        self._cached_get_all_files: list[Path] | None = None
+        """placeholder for storing the most recently run cached get_all_files results"""
+
     def __repr__(self):
         return f"{self.path}"
 
@@ -122,19 +127,17 @@ class Folder:
         it belongs in the final results.
         """
         # [Part 1] Create the masks for the type of files we want to keep
-        mask_temp_lock = path.name.startswith("~")
-        mask_hidden = path.name.startswith(".")
+        mask_not_temp_lock = path.name.startswith("~")
+        mask_not_hidden = path.name.startswith(".")
 
         if days is None:
-            results = all((~mask_temp_lock, ~mask_hidden))
-            print(f"Path:{path} - Results:{results}")
+            results = all((mask_not_temp_lock, mask_not_hidden))
             return results
         mask_in_date_range = date.fromtimestamp(path.stat().st_mtime) >= (date.today() - timedelta(days=days))
-        results = all((~mask_temp_lock, ~mask_hidden, mask_in_date_range))
-        print(f"Path:{path} - Results:{results}")
+        results = all((mask_not_temp_lock, mask_not_hidden, mask_in_date_range))
         return results
 
-    def _find_all_files(
+    def get_all_files(
             self,
             filename_pattern: str,
             with_asterisks: bool = True,
@@ -177,6 +180,9 @@ class Folder:
 
         # [Part 4]: sort the files and return the list of Path
         files = sorted(files, key=os.path.getmtime, reverse=True)
+
+        # [4.1] the cached values for get_all_files
+        self._cached_get_all_files = files.copy()
         return files
 
     def _find_recent_files(
@@ -195,7 +201,7 @@ class Folder:
         :param recurse: whether to recurse through sub-folders
         :return: Path object that meets the parameters
         """
-        files = self._find_all_files(
+        files = self.get_all_files(
             filename_pattern=filename_pattern,
             with_asterisks=with_asterisks,
             recurse=recurse,
@@ -230,13 +236,23 @@ class Folder:
         _text_types = (".txt", ".csv")
 
         if file_path.suffix in _excel_types:
-            if "sheet_name" not in kwargs.keys():
-                kwargs["sheet_name"] = 0
-            return pd.read_excel(file_path, *args, **kwargs)
+            try:
+                if "sheet_name" not in kwargs.keys():
+                    kwargs["sheet_name"] = 0
+                df = pd.read_excel(file_path, *args, **kwargs)
+                df["From"] = file_path.stem
+                return df
+            except ValueError:
+                if "sheet_name" not in kwargs.keys():
+                    print(f"Could not find {kwargs['sheet_name']} in {file_path}, returning None...")
+                    return pd.DataFrame()
+                raise ValueError
 
         elif file_path.suffix in _text_types:
             try:
-                return pd.read_csv(file_path, *args, **kwargs)
+                df = pd.read_csv(file_path, *args, **kwargs)
+                df["From"] = file_path.stem
+                return df
             except pandas.errors.ParserError:
                 print("Could not parse in C, attempting to reparse in Python...")
                 return pd.read_csv(file_path, engine='python', on_bad_lines='warn', *args, **kwargs)
@@ -245,17 +261,25 @@ class Folder:
                 print(f"reattempting to parse with chardet...")
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
-                    return pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
+                    df = pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
+                    df["From"] = file_path.stem
+                    return df
             except pd.errors.DtypeWarning as dt_warning:
                 print(dt_warning)
                 print("reprocessing with lower_memory arg...")
-                return pd.read_csv(file_path, low_memory=False, *args, **kwargs)
+                df = pd.read_csv(file_path, low_memory=False, *args, **kwargs)
+                df["From"] = file_path.stem
+                return df
         elif file_path.suffix == ".json":
-            return pd.read_json(file_path, *args, **kwargs)
+            df = pd.read_json(file_path, *args, **kwargs)
+            df["From"] = file_path.stem
+            return df
         try:
             url = urlparse(str(file_path))
             if url.netloc == "docs.google.com" and "format=csv" in url.query.split("&"):
-                return pd.read_csv(file_path, *args, **kwargs)
+                df = pd.read_csv(file_path, *args, **kwargs)
+                df["From"] = file_path.stem
+                return df
         except HTTPError as e:
             raise e
         else:
@@ -358,7 +382,9 @@ class Folder:
             filename_pattern: str = "",
             with_asterisks: bool = True,
             recurse: bool = False,
-            limit: int | None = None, *args, **kwargs) -> pd.DataFrame:
+            limit: int | None = None,
+            use_cache: bool = True,
+            *args, **kwargs) -> pd.DataFrame:
         """
         Uses a filename pattern to find all files that follow the naming convention
         and converts the files into a single DataFrame object6
@@ -366,7 +392,6 @@ class Folder:
         :param filename_pattern: the naming convention of the files you are searching for
         :param with_asterisks: defaults to True. Determines whether an asterisks are added at the end of the
         filename pattern
-
         :param recurse: defaults to False. Determines whether to search for sub-folders
         :param limit: defaults to None. Determines whether to only look at the first x files to combine.
         don't use this parameter if you are unsure of the number of files in the folder
@@ -378,14 +403,19 @@ class Folder:
         if not with_asterisks and filename_pattern == "":
             raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
-        # handling finding the files with recursion or not
-        files = self._find_all_files(
-            filename_pattern=filename_pattern,
-            with_asterisks=with_asterisks,
-            recurse=recurse
-        )
+        # [Part 2]: getting the paths of the files
 
-        # handling the only_first_x param
+        # [2.1] if user does not want to use the cache or if cache is None then run the function
+        if self._cached_get_all_files is None or use_cache is False:
+            files = self.get_all_files(
+                filename_pattern=filename_pattern,
+                with_asterisks=with_asterisks,
+                recurse=recurse
+            )
+        else:
+            files = self._cached_get_all_files.copy()
+
+        # [2.1] handling the only_first_x param or the limit (the max files we want to combine)
         if limit is not None:
             try:
                 files = files[: limit]
@@ -396,22 +426,20 @@ class Folder:
                 if limit < 0:
                     raise ValueError(f"The value of only_first_x must be a positive integer. Got ({limit}).")
 
-        # handling the combining of files
-        df = None
-        for file in files:
-            if file.is_dir():
-                """
-                This is used for when the recurse is True so that it doesn't raise an error
-                """
-                continue
-            temp = self.open(file, *args, **kwargs)
-            temp["From"] = file.stem
-            if df is None:
-                df = temp
-                continue
-            df = pd.concat((df, temp))
+        # [Part 3] handling the combining of files
+        # [3.2] Loop in Parallel
+        results = []
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(self.open, file, *args, **kwargs): file for file in files if not file.is_dir()}
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Combining Excel Files"):
+                try:
+                    temp = future.result()
+                    results.append(temp)
+                except Exception as e:
+                    raise e
 
-        # move From to the front
+        # [Part 4] combine and move from to the front
+        df = pd.concat(results)
         df.insert(0, "From", df.pop("From"))
         return df
 

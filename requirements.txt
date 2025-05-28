@@ -1,7 +1,10 @@
-pathlib
+pathlib~=1.0.1
 openpyxl
 xlrd==2.0.1
 openpyxl
 pandas==2.0.2
 chardet==5.2.0
 numpy<2.0.0
+pytest~=8.3.5
+tqdm~=4.67.1
+setuptools~=80.1.0
