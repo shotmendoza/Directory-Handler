@@ -13,6 +13,7 @@ import pandas.errors
 import chardet
 
 from dirlin.src.base.document import Document
+from dirlin.src.base.util import DirlinFormatter
 
 
 class Directory:
@@ -31,7 +32,7 @@ class Directory:
             folder for macOS. Windows currently not supported.
             - initialize_posix_path: assumes the script is on a macOS directory
 
-        :param folder: initializes a Folder.folder FolderPath object
+        :param path: initializes a Folder.folder FolderPath object
         :param initialize_posix_path: initializes default macOS folders
         """
         _curr_folder_directory = Path.cwd().home()
@@ -66,7 +67,7 @@ class Directory:
 
 class Folder:
     def __init__(self, path: Path | str | None = None):
-        """
+        """utility object that allows for handling files inside of folders.
 
         Dataframe Functions:
             - open() : opens a path file and converts it into a dataframe
@@ -100,6 +101,9 @@ class Folder:
         self.path_open_recent: Path | None = None
         """stores the most recent path used on self.open_recent or self.open_recent_as_document()"""
 
+        self._format: DirlinFormatter = DirlinFormatter()
+        """used for parsing and formatting the user args"""
+
     def __repr__(self):
         return f"{self.path}"
 
@@ -109,6 +113,68 @@ class Folder:
     def __truediv__(self, other) -> Path:
         return Path(self.path) / other
 
+    @staticmethod
+    def _path_param_fits(
+            path: Path,
+            days: int | None = None
+    ) -> bool:
+        """helper function for _find_all_files that will parse the string and determine whether
+        it belongs in the final results.
+        """
+        # [Part 1] Create the masks for the type of files we want to keep
+        mask_not_temp_lock = ~path.name.startswith("~")
+        mask_not_hidden = ~path.name.startswith(".")
+
+        if days is None:
+            return all((mask_not_temp_lock, mask_not_hidden))
+        mask_in_date_range = date.fromtimestamp(path.stat().st_mtime) >= (date.today() - timedelta(days=days))
+        return all((mask_not_temp_lock, mask_not_hidden, mask_in_date_range))
+
+    def _find_all_files(
+            self,
+            filename_pattern: str,
+            with_asterisks: bool = True,
+            recurse: bool = False,
+            days: int | None = None,
+    ) -> list[Path]:
+        """function for finding all files that follow naming conventions.
+        Will search a folder for the filename and return all Paths that match (i.e. list[.xlsx, .xlsx])
+
+        Used in _find_recent_files() and find_and_combine()
+
+        :param filename_pattern: the naming convention of the file, will look in the specified directory
+        :param days: looks back past x number of days. If looking in 12/31, then days=5 would look back to 12/26 files
+        :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg.
+        :param recurse: whether to recurse through sub-folders
+        :return: Path object that meets the parameters
+        """
+
+        # [Part 1]: create mapping for the different user input
+        # [1.1] determines whether to include asterisks in filename pattern. Shortcut for getting all files
+        asterisks_mapping = {
+            True: f"{filename_pattern}*",
+            False: filename_pattern
+        }
+        # [1.2] determines whether to recurse through folders. Allows us to keep same line.
+        recurse_mapping = {
+            True: self.path.rglob,
+            False: self.path.glob,
+        }
+
+        # [Part 2] checking for user arguments
+        if not with_asterisks and filename_pattern == "":
+            raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
+
+        # [Part 3]: I/O with the directory and get list of all Paths based on filename pattern
+        files = [
+            f for f in recurse_mapping[recurse](pattern=asterisks_mapping[with_asterisks])
+            if self._path_param_fits(f, days)
+        ]
+
+        # [Part 4]: sort the files and return the list of Path
+        files = sorted(files, key=os.path.getmtime, reverse=True)
+        return files
+
     def _find_recent_files(
             self,
             filename_pattern: str,
@@ -116,35 +182,23 @@ class Folder:
             with_asterisks: bool = True,
             recurse: bool = False) -> Path:
         """
-        Base function for finding the most recent file.
+        Base function for finding the most recently modified file.
         Used in open_recent() and open_recent_as_document()
 
         :param filename_pattern: the naming convention of the file, will look in the specified directory
         :param days: looks back past x number of days. If looking in 12/31, then days=5 would look back to 12/26 files
-        :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg
+        :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg.
         :param recurse: whether to recurse through sub-folders
         :return: Path object that meets the parameters
         """
-
-        asterisks_mapping = {
-            True: f"{filename_pattern}*",
-            False: filename_pattern
-        }
-
-        if recurse:
-            files = [
-                f for f in self.path.rglob(pattern=f"{asterisks_mapping[with_asterisks]}")
-                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=days))
-                and not f.name.startswith("~")
-            ]
-        else:
-            files = [
-                f for f in self.path.glob(pattern=f"{asterisks_mapping[with_asterisks]}")
-                if date.fromtimestamp(f.stat().st_mtime) >= (date.today() - timedelta(days=days))
-                and not f.name.startswith("~")
-            ]
+        files = self._find_all_files(
+            filename_pattern=filename_pattern,
+            with_asterisks=with_asterisks,
+            recurse=recurse,
+            days=days
+        )
         try:
-            most_recent_file = Path(sorted(files, key=os.path.getmtime, reverse=True)[0])
+            most_recent_file = Path(files[0])
             return most_recent_file
         except IndexError:
             raise FileNotFoundError(
@@ -153,7 +207,7 @@ class Folder:
     def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
-        Currently, reads .xlsx, .xls, .csv, .json file extensions, and will raise a
+        Currently, reads .xlsx, .xls, .csv, .txt, .json file extensions, and will raise a
         KeyError for any other file types.
 
         :param file_path: path to the file you want to open
@@ -300,7 +354,7 @@ class Folder:
             filename_pattern: str = "",
             with_asterisks: bool = True,
             recurse: bool = False,
-            only_first_x: int | None = None, *args, **kwargs) -> pd.DataFrame:
+            limit: int | None = None, *args, **kwargs) -> pd.DataFrame:
         """
         Uses a filename pattern to find all files that follow the naming convention
         and converts the files into a single DataFrame object6
@@ -310,48 +364,36 @@ class Folder:
         filename pattern
 
         :param recurse: defaults to False. Determines whether to search for sub-folders
-        :param only_first_x: defaults to None. Determines whether to only look at the first x files to combine.
+        :param limit: defaults to None. Determines whether to only look at the first x files to combine.
         don't use this parameter if you are unsure of the number of files in the folder
         :param args: args used in pd.DataFrame objects
         :param kwargs: keyword args used in pd.DataFrame objects
         :return: a DataFrame object of all the files that share similar naming conventions in a folder
         """
         # formatting the filename pattern convention and handling asterisks
-        asterisks_mapping = {
-            True: f"{filename_pattern}*",
-            False: filename_pattern
-        }
         if not with_asterisks and filename_pattern == "":
             raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
         # handling finding the files with recursion or not
-        df = None
-        if recurse:
-            files = [
-                f for f in self.path.rglob(
-                    pattern=f"{asterisks_mapping[with_asterisks]}"
-                ) if not f.name.startswith("~") and not f.name.startswith(".")
-            ]
-        else:
-            files = [
-                f for f in self.path.glob(
-                    pattern=f"{asterisks_mapping[with_asterisks]}"
-                ) if not f.name.startswith("~") and not f.name.startswith(".")
-            ]
+        files = self._find_all_files(
+            filename_pattern=filename_pattern,
+            with_asterisks=with_asterisks,
+            recurse=recurse
+        )
 
         # handling the only_first_x param
-        files = sorted(files, key=os.path.getmtime, reverse=True)
-        if only_first_x is not None:
+        if limit is not None:
             try:
-                files = files[: only_first_x]
+                files = files[: limit]
             except IndexError:
-                print(f"only_first_x arg  was too large ({only_first_x}) compared to found files ({len(files)})")
+                print(f"only_first_x arg  was too large ({limit}) compared to found files ({len(files)})")
                 print(f"keeping the length of the files")
             else:
-                if only_first_x < 0:
-                    raise ValueError(f"The value of only_first_x must be a positive integer. Got ({only_first_x}).")
+                if limit < 0:
+                    raise ValueError(f"The value of only_first_x must be a positive integer. Got ({limit}).")
 
         # handling the combining of files
+        df = None
         for file in files:
             if file.is_dir():
                 """
@@ -364,6 +406,9 @@ class Folder:
                 df = temp
                 continue
             df = pd.concat((df, temp))
+
+        # move From to the front
+        df.insert(0, "From", df.pop("From"))
         return df
 
     def index_files(

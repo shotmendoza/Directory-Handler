@@ -1,6 +1,6 @@
 """Dirlin (Directory Handler), set of tools to help process local files."""
 
-__version__ = "0.3.6"
+__version__ = "0.4.0"
 
 from .src.base.folder import (
     Folder,

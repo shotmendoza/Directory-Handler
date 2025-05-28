@@ -291,24 +291,24 @@ class BaseValidation:
             summary = {
                 check_name: {
                     "Check Function Name": r.function_name,
+                    "Check Description": r.function_description,
                     "Total Records Validated": r.result.count(),
                     "Total Records Passed": r.result.sum(),
                     "Total Records Failed": len(r.result) - r.result.sum(),
-                    "Check Description": r.function_description
                 } for check_name, r in results.items()
             }
         else:
             summary = {
-                group_name: {
+                check_name: {
+                    "Group": group_name,
                     "Check Function Name": r.function_name,
+                    "Check Description": r.function_description,
                     "Total Records Validated": r.result.count(),
                     "Total Records Passed": r.result.sum(),
                     "Total Records Failed": len(r.result) - r.result.sum(),
-                    "Check Parameters Used": check_name,
-                    "Check Description": r.function_description
                 } for check_name, r in results.items()
             }
-        return pd.DataFrame(summary).T.reset_index()
+        return pd.DataFrame(summary).T.reset_index().sort_values("Total Records Failed", ascending=False)
 
     def run_error_log(self, df: pd.DataFrame, group_name: str | None = None) -> pd.DataFrame:
         """gives you a Dataframe with the records that failed the validation
@@ -535,7 +535,11 @@ class BaseValidation:
 
                 # At this point we are assuming that there is an alias name and no matching column
                 # Now we add the params based on the number of alias we see
-                param_column_mapping[param] = alias_names
+                if isinstance(alias_names, str):
+                    param_column_mapping[param] = alias_names
+                    continue
+                # we will only accept the Parameters if the Alias Name is in the Dataframe we are planning on using
+                param_column_mapping[param] = [name for name in alias_names if column_mapping.get(name) is not None]
         return param_column_mapping
 
     @classmethod
