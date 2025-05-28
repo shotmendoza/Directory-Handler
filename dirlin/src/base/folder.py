@@ -255,7 +255,7 @@ class Folder:
         except HTTPError as e:
             raise e
         else:
-            raise KeyError(f"File suffix {file_path.suffix} is an unsupported format.")
+            raise KeyError(f"File suffix {file_path.suffix} is an unsupported format. Path: {file_path}")
 
     def open_as_document(self, file_path: str | Path, *args, **kwargs) -> Document:
         """opens the file path as a Document object.
