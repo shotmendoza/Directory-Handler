@@ -122,13 +122,17 @@ class Folder:
         it belongs in the final results.
         """
         # [Part 1] Create the masks for the type of files we want to keep
-        mask_not_temp_lock = ~path.name.startswith("~")
-        mask_not_hidden = ~path.name.startswith(".")
+        mask_temp_lock = path.name.startswith("~")
+        mask_hidden = path.name.startswith(".")
 
         if days is None:
-            return all((mask_not_temp_lock, mask_not_hidden))
+            results = all((~mask_temp_lock, ~mask_hidden))
+            print(f"Path:{path} - Results:{results}")
+            return results
         mask_in_date_range = date.fromtimestamp(path.stat().st_mtime) >= (date.today() - timedelta(days=days))
-        return all((mask_not_temp_lock, mask_not_hidden, mask_in_date_range))
+        results = all((~mask_temp_lock, ~mask_hidden, mask_in_date_range))
+        print(f"Path:{path} - Results:{results}")
+        return results
 
     def _find_all_files(
             self,
