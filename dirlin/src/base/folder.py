@@ -127,13 +127,20 @@ class Folder:
         it belongs in the final results.
         """
         # [Part 1] Create the masks for the type of files we want to keep
-        mask_not_temp_lock = path.name.startswith("~")
-        mask_not_hidden = path.name.startswith(".")
+        mask_not_temp_lock = not path.name.startswith("~")
+        mask_not_hidden = not path.name.startswith(".")
 
+        # [Part 2] Return if we have no Dates we need to handle
         if days is None:
             results = all((mask_not_temp_lock, mask_not_hidden))
             return results
-        mask_in_date_range = date.fromtimestamp(path.stat().st_mtime) >= (date.today() - timedelta(days=days))
+
+        # [Part 3] handling dates and most recent files
+        date_modified = date.fromtimestamp(path.stat().st_mtime)
+        date_from_n = date.today() - timedelta(days=days)
+
+        # [Part 4] return the results of the masks with date consideration
+        mask_in_date_range = date_modified >= date_from_n
         results = all((mask_not_temp_lock, mask_not_hidden, mask_in_date_range))
         return results
 
@@ -242,10 +249,11 @@ class Folder:
                 df = pd.read_excel(file_path, *args, **kwargs)
                 df["From"] = file_path.stem
                 return df
-            except ValueError:
+            except ValueError as ve:
                 if "sheet_name" not in kwargs.keys():
                     print(f"Could not find {kwargs['sheet_name']} in {file_path}, returning None...")
                     return pd.DataFrame()
+                print(f"{ve}: creating an empty DateFrame object...")
                 raise ValueError
 
         elif file_path.suffix in _text_types:
@@ -431,10 +439,13 @@ class Folder:
         results = []
         with ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.open, file, *args, **kwargs): file for file in files if not file.is_dir()}
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Combining Excel Files"):
+            pbar = tqdm(total=len(futures), desc="Combining Excel Files", position=0)
+
+            for future in as_completed(futures):
                 try:
-                    temp = future.result()
-                    results.append(temp)
+                    df, file_path, aw, kw = future.result()
+                    results.append(df)
+                    pbar.set_description(f"from {file_path}")
                 except Exception as e:
                     raise e
 
