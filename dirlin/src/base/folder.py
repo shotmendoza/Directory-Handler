@@ -171,6 +171,7 @@ class Folder:
             with_asterisks: bool = True,
             recurse: bool = False,
             days: int | None = None,
+            use_cached: bool = False,
     ) -> list[Path]:
         """function for finding all files that follow naming conventions.
         Will search a folder for the filename and return all Paths that match (i.e. list[.xlsx, .xlsx])
@@ -181,8 +182,14 @@ class Folder:
         :param days: looks back past x number of days. If looking in 12/31, then days=5 would look back to 12/26 files
         :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg.
         :param recurse: whether to recurse through sub-folders
+        :param use_cached: whether to use cached results or not. Speeds up repetitive operations.
         :return: Path object that meets the parameters
         """
+
+        # [Part 0]: the happy path using the cached version
+        if use_cached is True and self._cached_get_all_files is not None:
+            return self._cached_get_all_files
+        # ===note===: below will only run if the use_cached function is False or this function was never used.
 
         # [Part 1]: create mapping for the different user input
         # [1.1] determines whether to include asterisks in filename pattern. Shortcut for getting all files
@@ -436,14 +443,12 @@ class Folder:
 
         # [Part 2]: getting the paths of the files
         # [2.1] if user does not want to use the cache or if cache is None then run the function
-        if self._cached_get_all_files is None or use_cache is False:
-            files = self.get_all_files(
-                filename_pattern=filename_pattern,
-                with_asterisks=with_asterisks,
-                recurse=recurse
-            )
-        else:
-            files = self._cached_get_all_files.copy()
+        files = self.get_all_files(
+            filename_pattern=filename_pattern,
+            with_asterisks=with_asterisks,
+            recurse=recurse,
+            use_cached=use_cache
+        )
 
         # [2.2] handling the only_first_x param or the limit (the max files we want to combine)
         if limit is not None:
@@ -466,11 +471,16 @@ class Folder:
 
             for future in as_completed(futures):
                 try:
-                    df, file_path, aw, kw = future.result()
+                    # [3.2.1] Adding filepath to Progress Bar
+                    file_path = futures[future]
+                    pbar.set_description(f"Adding: {file_path}")
+
+                    # [3.2.2] Adding dataframe to the concat list
+                    df = future.result()
                     results.append(df)
-                    pbar.set_description(f"from {file_path}")
                 except Exception as e:
                     raise e
+            pbar.set_description(f"Combining Excel files completed...")
 
         # [Part 4] combine and move from to the front
         df = pd.concat(results)

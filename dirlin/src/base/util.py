@@ -176,9 +176,9 @@ class TqdmLoggingHandler(logging.Handler):
         super().__init__(level)
 
         # [1.0] set formatting
-        _default_format = "(%(asctime)s | %(levelname)s | %(message)s)"
+        _default_format = "%(asctime)s | %(levelname)s | %(message)s"
         self.setFormatter(logging.Formatter(_default_format))
 
     def emit(self, record: logging.LogRecord) -> None:
         msg = self.format(record)
-        tqdm.write(msg)
+        tqdm.write(f"\n{msg}")
