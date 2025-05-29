@@ -250,13 +250,14 @@ class Folder:
             raise FileNotFoundError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
-    def open(self, file_path: str | Path, *args, **kwargs) -> pd.DataFrame:
+    def open(self, file_path: str | Path, add_from: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
         Currently, reads .xlsx, .xls, .csv, .txt, .json file extensions, and will raise a
         KeyError for any other file types.
 
         :param file_path: path to the file you want to open
+        :param add_from: determines whether to add the `From` (source) field when opening the file
         :param args: see documentation for pd.DataFrame object
         :param kwargs: see documentation for pd.DataFrame object
         :return: pd.DataFrame object of the file
@@ -276,7 +277,8 @@ class Folder:
                 if "sheet_name" not in kwargs.keys():
                     kwargs["sheet_name"] = 0
                 df = pd.read_excel(file_path, *args, **kwargs)
-                df["From"] = file_path.stem
+                if add_from is True:
+                    df["From"] = file_path.stem
                 return df
             except ValueError as ve:
                 if "sheet_name" not in kwargs.keys():
@@ -290,7 +292,8 @@ class Folder:
         elif file_path.suffix in _text_types:
             try:
                 df = pd.read_csv(file_path, *args, **kwargs)
-                df["From"] = file_path.stem
+                if add_from is True:
+                    df["From"] = file_path.stem
                 return df
             except pandas.errors.ParserError:
                 self.logger.warning(f"Could not parse in C, attempting to reparse in Python...")
@@ -300,22 +303,26 @@ class Folder:
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
                     df = pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
-                    df["From"] = file_path.stem
+                    if add_from is True:
+                        df["From"] = file_path.stem
                     return df
             except pd.errors.DtypeWarning as dt_warning:
                 self.logger.warning(f"{dt_warning}: reprocessing with lower_memory arg...")
                 df = pd.read_csv(file_path, low_memory=False, *args, **kwargs)
-                df["From"] = file_path.stem
+                if add_from is True:
+                    df["From"] = file_path.stem
                 return df
         elif file_path.suffix == ".json":
             df = pd.read_json(file_path, *args, **kwargs)
-            df["From"] = file_path.stem
+            if add_from is True:
+                df["From"] = file_path.stem
             return df
         try:
             url = urlparse(str(file_path))
             if url.netloc == "docs.google.com" and "format=csv" in url.query.split("&"):
                 df = pd.read_csv(file_path, *args, **kwargs)
-                df["From"] = file_path.stem
+                if add_from is True:
+                    df["From"] = file_path.stem
                 return df
         except HTTPError as e:
             raise e
@@ -466,18 +473,24 @@ class Folder:
         # [3.2] Loop in Parallel
         results = []
         with ThreadPoolExecutor() as executor:  # for running in parallel
-            futures = {executor.submit(self.open, file, *args, **kwargs): file for file in files if not file.is_dir()}
+            futures = {
+                executor.submit(self.open, file, True, *args, **kwargs): file
+                for file in files if not file.is_dir()
+            }
             pbar = tqdm(total=len(futures), desc="Combining Excel Files", position=0)
 
             for future in as_completed(futures):
                 try:
-                    # [3.2.1] Adding filepath to Progress Bar
+                    # [3.2.1] Adding filepath to progress bar
                     file_path = futures[future]
                     pbar.set_description(f"Adding: {file_path}")
 
                     # [3.2.2] Adding dataframe to the concat list
                     df = future.result()
                     results.append(df)
+
+                    # [3.2.3] Updating the progress bar
+                    pbar.update()
                 except Exception as e:
                     raise e
             pbar.set_description(f"Combining Excel files completed...")
