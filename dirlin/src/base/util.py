@@ -1,4 +1,7 @@
+import logging
+
 import pandas as pd
+from tqdm import tqdm
 
 
 class DirlinFormatter:
@@ -140,9 +143,42 @@ class DirlinFormatter:
         return pd.Series(percentage_field)
 
     @classmethod
+    def flip_signature(cls, signature_column: pd.Series) -> pd.Series:
+        """flips the signature of all the columns in the signature_column argument
+
+        The function assumes that Report.format() has been run at least once so that
+        Report._df is populated.
+
+        This function is used any time a 'reversal' file needs to be created.
+        If you need to back out the original amount, or 'zero-out' a column
+        so that two DataFrames equal 0, then this function is helpful.
+
+        :param signature_column: the column to flip through
+        :return: DataFrame with the required fields having flipped signatures
+        """
+        signature_column = signature_column.fillna(0)
+        signature_column = signature_column * -1
+        return signature_column
+
+    @classmethod
     def format_zip_fields(cls, zip_field: pd.Series) -> pd.Series:
         """retains the leading 0 in a zip code string field
 
         :param zip_field: the field with the Zip Code values
         """
         return zip_field.astype(str).str.extract('(\d+)', expand=False).str.zfill(5)
+
+
+class TqdmLoggingHandler(logging.Handler):
+    """handles logging for TQDM messages and errors on the console
+    """
+    def __init__(self, level=logging.INFO):
+        super().__init__(level)
+
+        # [1.0] set formatting
+        _default_format = "(%(asctime)s | %(levelname)s | %(message)s)"
+        self.setFormatter(logging.Formatter(_default_format))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = self.format(record)
+        tqdm.write(msg)

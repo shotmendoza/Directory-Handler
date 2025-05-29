@@ -1,5 +1,5 @@
 """For the classic Dirlin Folders"""
-
+import logging
 import os.path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -15,7 +15,7 @@ import chardet
 from tqdm import tqdm
 
 from dirlin.src.base.document import Document
-from dirlin.src.base.util import DirlinFormatter
+from dirlin.src.base.util import DirlinFormatter, TqdmLoggingHandler
 
 
 class Directory:
@@ -37,8 +37,16 @@ class Directory:
         :param path: initializes a Folder.folder FolderPath object
         :param initialize_posix_path: initializes default macOS folders
         """
+        # [Part 1] setting up constants
         _curr_folder_directory = Path.cwd().home()
 
+        # [Part 2] Loggers
+        self.logger = logging.getLogger("dirlin.base.directory")
+        self.logger.setLevel(logging.INFO)
+        _tqdm_handler = TqdmLoggingHandler()
+        self.logger.addHandler(_tqdm_handler)
+
+        # [Part 3] setup placeholder folders
         self.DOWNLOADS: Folder | None = None
         self.DESKTOP: Folder | None = None
         self.DOCUMENTS: Folder | None = None
@@ -47,7 +55,7 @@ class Directory:
         # adding the macOS only directory paths, so we don't have to define these in the future and they are included
         if initialize_posix_path is True:
             if isinstance(_curr_folder_directory, PosixPath):
-                print(f"Adding macOS specific default directories...")
+                self.logger.info(f"Adding macOS specific default directories...")
                 self.DOWNLOADS = Folder(_curr_folder_directory / "Downloads")
                 self.DESKTOP = Folder(_curr_folder_directory / "Desktop")
                 self.DOCUMENTS = Folder(_curr_folder_directory / "Documents")
@@ -55,7 +63,7 @@ class Directory:
                 try:
                     self.DEVELOPER = Folder(_curr_folder_directory / "Developer")
                 except AttributeError:
-                    print(f"Developer folder has not been created yet on this mac.")
+                    self.logger.warning(f"Developer folder has not been created yet on this mac.")
 
         if path is None:
             path = self.DOWNLOADS.path
@@ -93,6 +101,7 @@ class Folder:
 
         :param path: Path to the Folder. This is the directory the functions will use to search files in
         """
+        # [Part 1] Setting up the Path based properties
         if isinstance(path, str):
             path = Path(path)
         self.path = path
@@ -103,11 +112,23 @@ class Folder:
         self.path_open_recent: Path | None = None
         """stores the most recent path used on self.open_recent or self.open_recent_as_document()"""
 
+        # [Part 2] Setting up the Utility Properties
+        # [2.1] the string formatting for parsing and formatting args
         self._format: DirlinFormatter = DirlinFormatter()
         """used for parsing and formatting the user args"""
 
+        # [2.2] cache utility property for storing the results of get_all_files
         self._cached_get_all_files: list[Path] | None = None
-        """placeholder for storing the most recently run cached get_all_files results"""
+        """placeholder for storing the most recently run get_all_files results"""
+
+        # [2.3] Logging utility class and setting up logging
+        self.logger = logging.getLogger("dirlin.base.folder")
+        """used for logging to the console, or, in the future, logging to a file"""
+        self.logger.setLevel(logging.INFO)
+
+        # [2.3.1] adding the TQDM Logging
+        tqdm_handler = TqdmLoggingHandler()
+        self.logger.addHandler(tqdm_handler)
 
     def __repr__(self):
         return f"{self.path}"
@@ -170,18 +191,19 @@ class Folder:
             False: filename_pattern
         }
         # [1.2] determines whether to recurse through folders. Allows us to keep same line.
-        recurse_mapping = {
+        # ===note===: the value returns a function. One searches recursively and the other searches in the given folder
+        recurse_fn_mapping = {
             True: self.path.rglob,
             False: self.path.glob,
         }
 
-        # [Part 2] checking for user arguments
+        # [Part 2] checking for user arguments and raising an error if mismatch
         if not with_asterisks and filename_pattern == "":
             raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
         # [Part 3]: I/O with the directory and get list of all Paths based on filename pattern
         files = [
-            f for f in recurse_mapping[recurse](pattern=asterisks_mapping[with_asterisks])
+            f for f in recurse_fn_mapping[recurse](pattern=asterisks_mapping[with_asterisks])
             if self._path_param_fits(f, days)
         ]
 
@@ -192,7 +214,7 @@ class Folder:
         self._cached_get_all_files = files.copy()
         return files
 
-    def _find_recent_files(
+    def _find_recent_file(
             self,
             filename_pattern: str,
             days: int = 30,
@@ -251,10 +273,12 @@ class Folder:
                 return df
             except ValueError as ve:
                 if "sheet_name" not in kwargs.keys():
-                    print(f"Could not find {kwargs['sheet_name']} in {file_path}, returning None...")
+                    _msg = f"Could not find {kwargs['sheet_name']} in {file_path}, returning empty DateFrame object..."
+                    self.logger.warning(_msg)
                     return pd.DataFrame()
-                print(f"{ve}: creating an empty DateFrame object...")
-                raise ValueError
+                _msg = f"{ve}: creating an empty DateFrame object..."
+                self.logger.warning(_msg)
+                return pd.DataFrame()
 
         elif file_path.suffix in _text_types:
             try:
@@ -262,19 +286,17 @@ class Folder:
                 df["From"] = file_path.stem
                 return df
             except pandas.errors.ParserError:
-                print("Could not parse in C, attempting to reparse in Python...")
+                self.logger.warning(f"Could not parse in C, attempting to reparse in Python...")
                 return pd.read_csv(file_path, engine='python', on_bad_lines='warn', *args, **kwargs)
             except UnicodeDecodeError as uni_error:
-                print(f"{uni_error}")
-                print(f"reattempting to parse with chardet...")
+                self.logger.warning(f"{uni_error}: reattempting to parse with chardet...")
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
                     df = pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
                     df["From"] = file_path.stem
                     return df
             except pd.errors.DtypeWarning as dt_warning:
-                print(dt_warning)
-                print("reprocessing with lower_memory arg...")
+                self.logger.warning(f"{dt_warning}: reprocessing with lower_memory arg...")
                 df = pd.read_csv(file_path, low_memory=False, *args, **kwargs)
                 df["From"] = file_path.stem
                 return df
@@ -332,7 +354,7 @@ class Folder:
         :param kwargs: named arguments for the DataFrame object
         :return: a DataFrame object
         """
-        self.path_open_recent = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
+        self.path_open_recent = self._find_recent_file(filename_pattern, days, with_asterisks, recurse)
         return self.open(self.path_open_recent, *args, **kwargs)
 
     def open_recent_as_document(
@@ -353,7 +375,7 @@ class Folder:
         :param kwargs: keyword arguments for dataframe function
         :return: returns a Document object
         """
-        self.path_open_recent = self._find_recent_files(filename_pattern, days, with_asterisks, recurse)
+        self.path_open_recent = self._find_recent_file(filename_pattern, days, with_asterisks, recurse)
         return self.open_as_document(self.path_open_recent, *args, **kwargs)
 
     def as_map(
@@ -405,6 +427,7 @@ class Folder:
         don't use this parameter if you are unsure of the number of files in the folder
         :param args: args used in pd.DataFrame objects
         :param kwargs: keyword args used in pd.DataFrame objects
+        :param use_cache: determines whether to use the previous results from find and combine to save time
         :return: a DataFrame object of all the files that share similar naming conventions in a folder
         """
         # formatting the filename pattern convention and handling asterisks
@@ -412,7 +435,6 @@ class Folder:
             raise ValueError(f"filename_pattern cannot be left as default if with_asterisks parameter is set to False")
 
         # [Part 2]: getting the paths of the files
-
         # [2.1] if user does not want to use the cache or if cache is None then run the function
         if self._cached_get_all_files is None or use_cache is False:
             files = self.get_all_files(
@@ -423,21 +445,22 @@ class Folder:
         else:
             files = self._cached_get_all_files.copy()
 
-        # [2.1] handling the only_first_x param or the limit (the max files we want to combine)
+        # [2.2] handling the only_first_x param or the limit (the max files we want to combine)
         if limit is not None:
             try:
                 files = files[: limit]
             except IndexError:
-                print(f"only_first_x arg  was too large ({limit}) compared to found files ({len(files)})")
-                print(f"keeping the length of the files")
+                _msg = f"limit arg was too large ({limit}) compared to found files ({len(files)}). "
+                _msg2 = "Keeping all files found. Limit has not been applied."
+                self.logger.warning(_msg + _msg2)
             else:
                 if limit < 0:
-                    raise ValueError(f"The value of only_first_x must be a positive integer. Got ({limit}).")
+                    raise ValueError(f"The value of limit must be a positive integer. Got ({limit}).")
 
         # [Part 3] handling the combining of files
         # [3.2] Loop in Parallel
         results = []
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor() as executor:  # for running in parallel
             futures = {executor.submit(self.open, file, *args, **kwargs): file for file in files if not file.is_dir()}
             pbar = tqdm(total=len(futures), desc="Combining Excel Files", position=0)
 

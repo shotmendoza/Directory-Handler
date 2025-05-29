@@ -2,12 +2,14 @@
 
 import dataclasses
 import inspect
+import logging
 import re
-from typing import Any, Callable, Optional, Literal
+from typing import Any, Callable, Literal
 
 import pandas as pd
+from tqdm import tqdm
 
-from dirlin.src.base.util import DirlinFormatter
+from dirlin.src.base.util import DirlinFormatter, TqdmLoggingHandler
 
 
 @dataclasses.dataclass
@@ -223,6 +225,13 @@ class BaseValidation:
     you to add missing parameters into this variable as a dict.
     """
 
+    # 2025.05.29: we're going to add logging capabilities to the validation pipeline
+    _logger = logging.getLogger("dirlin.base.validation")
+    """used for logging to the console"""
+    _logger.setLevel(logging.INFO)
+    tqdm_logger = TqdmLoggingHandler()  # logging to stay in line with tqdm
+    _logger.addHandler(tqdm_logger)
+
     @classmethod
     def _run_validation(cls, df: pd.DataFrame) -> dict[str, _ResultWrapper]:
         """main function for BaseValidation, and runs the validation functions under the class,
@@ -233,9 +242,11 @@ class BaseValidation:
 
         """
         # STEP 0: 2025/05/02 adding the alias pull here for visibility
+        cls._logger.info(f"Getting child Alias Mapping...")
         cls.alias_mapping = cls._get_all_alias_mapping_in_class()  # should pull alias from subclass too
 
         # STEP 1: VALIDATE to validate that the class was set up correctly and is usable (GLOBAL)
+        cls._logger.info(f"Validating classes and check functions...")
         _verify = cls._validator(
             df,
             cls._get_function_return_type(),
@@ -245,25 +256,30 @@ class BaseValidation:
         ).check_all()
 
         # STEP 2: INITIALIZE to create all the maps, to prepare for running the checks
+        cls._logger.info(f"Determining function parameter and column relationships...")
         function_name_to_args_mapping = cls._map_function_to_args(df)  # gives me the func_name and (param and arg) tup
         """function used to pull the check functions, which includes the name, params, and args.
         This creates associations between the checks we have with the report columns we want to use as arguments.
         """
+        cls._logger.info(f"Getting all functions to iterate through...")
         function_mapping = cls._get_all_functions_in_class()  # gives me each function to iterate through
         """creates a mapping of the check_name, and the actual function code that goes with it.
         Helpful for creating an iterable for the next few steps
         """
+        cls._logger.info(f"Determining function type to run checks under...")
         function_to_function_type_map = cls._map_function_to_function_type()  # gives me the function type (param?)
         """current limitation of the pipeline, but this function determines the parameter types, and ensures that
         we return the current type. This is needed because we can't return scalar values when the parameters are
         expecting a Series type.
         """
+        cls._logger.info(f"Generating function description from docstring...")
         function_name_to_docstring_mapping = cls._get_all_function_docstrings()  # gives me the docstrings for the funcs
         """creates a mapping of {check_name: docstring}, which we use as one of the columns in our final deliverable
         to describe what each check is accomplishing and checking for.
         """
 
         # STEP 3: RUN THE CHECKS
+        cls._logger.info(f"Running validation checks...")
         results = cls._process_function_with_args(
             df,
             function_map=function_mapping,
@@ -285,6 +301,9 @@ class BaseValidation:
         results = self._run_validation(df)
         # todo this function and run_error_log should both be under the same class Result
         # this will allow you to do result.run_summary or result.run_validation, result.error_log
+
+        # Logging
+        self._logger.info(f"Creating a summary dataframe...")
 
         # Summary without the validation_name
         if group_name is None:
@@ -308,12 +327,15 @@ class BaseValidation:
                     "Total Records Failed": len(r.result) - r.result.sum(),
                 } for check_name, r in results.items()
             }
-        return pd.DataFrame(summary).T.reset_index().sort_values("Total Records Failed", ascending=False)
+        result = pd.DataFrame(summary).T.reset_index().sort_values("Total Records Failed", ascending=False)
+        self._logger.info(f"Summary dataframe created successfully...")
+        return result
 
     def run_error_log(self, df: pd.DataFrame, group_name: str | None = None) -> pd.DataFrame:
         """gives you a Dataframe with the records that failed the validation
         """
         results = self._run_validation(df)
+        self._logger.info(f"Creating an Error Log dataframe...")
 
         results_filter = []
         for check_name, r in results.items():
@@ -324,6 +346,7 @@ class BaseValidation:
             results_filter.append(temp_df)
 
         _df_results = pd.concat(results_filter, ignore_index=True)
+        self._logger.info(f"Error Log dataframe created successfully...")
         return _df_results
 
     @classmethod
@@ -351,7 +374,9 @@ class BaseValidation:
 
         """
         results = {}
+        pbar = tqdm(total=len(function_map), desc="Processing validations")
         for function_name, function in function_map.items():
+            cls._logger.info(f"Running {function_name}...")
             # function_args has the same key as function_map
             param_args_list = function_args[function_name]  # should be list of {param: col}
             match function_type_map[function_name]:
@@ -367,6 +392,8 @@ class BaseValidation:
                     result = cls._process_function_as_scalar_function(function, function_name, df, param_args_list)
             temp = {r.parameters_used: r for r in result}
             results = results | temp  # todo 2025.05.05 thinking this needs to be the ResultsWrapper to make API clear
+            pbar.update()
+        cls._logger.info(f"Validations complete!")
         return results
 
     @classmethod
@@ -681,7 +708,12 @@ class BaseValidation:
     @classmethod
     def _get_all_alias_mapping_in_class(cls) -> dict:
         """private helper function used to get the alias mapping from all previous subclasses without
-        overwriting previous values
+        overwriting previous values.
+
+        Alias Mapping is a key-value pair of a function parameter (used for checks)
+        with the column name on a report. We use this when column names on a report
+        don't match exactly with the parameter name of a function. For example,
+        if the function parameter is `price` and the column name is `Stock Price`.
         """
         all_alias_mapping: dict | None = None
         for subclass in cls.__mro__[:-1]:
