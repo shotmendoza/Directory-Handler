@@ -14,8 +14,8 @@ import pandas.errors
 import chardet
 from tqdm import tqdm
 
-from dirlin.src.base.document import Document
-from dirlin.src.base.util import DirlinFormatter, TqdmLoggingHandler
+from dirlin.core.document import Document
+from dirlin.core.util import DirlinFormatter, TqdmLoggingHandler
 
 
 class Directory:
@@ -41,7 +41,7 @@ class Directory:
         _curr_folder_directory = Path.cwd().home()
 
         # [Part 2] Loggers
-        self.logger = logging.getLogger("dirlin.base.directory")
+        self.logger = logging.getLogger("dirlin.core.directory")
         self.logger.setLevel(logging.INFO)
         _tqdm_handler = TqdmLoggingHandler()
         self.logger.addHandler(_tqdm_handler)
@@ -122,7 +122,7 @@ class Folder:
         """placeholder for storing the most recently run get_all_files results"""
 
         # [2.3] Logging utility class and setting up logging
-        self.logger = logging.getLogger("dirlin.base.folder")
+        self.logger = logging.getLogger("dirlin.core.folder")
         """used for logging to the console, or, in the future, logging to a file"""
         self.logger.setLevel(logging.INFO)
 

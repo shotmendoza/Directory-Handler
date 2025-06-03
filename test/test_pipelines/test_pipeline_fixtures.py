@@ -7,7 +7,7 @@ but the field in the DataFrame only has one field that is under the shared param
 
 For example, if a function has parameters(id, based_shared_field, static_field), then
 we would expect that a dataframe that only had one column under that shared parameter (because
-currently, the logic dictates that if no matching name is found, look at the base
+currently, the logic dictates that if no matching name is found, look at the core
 of the word `shared_field`) would be a static field.
 
 An example that got caught: `check_function_net_income(stock_gross_income, stock_expenses)`.

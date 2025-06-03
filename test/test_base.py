@@ -47,7 +47,7 @@ class TestBaseValidation(BaseValidation):
 class TestSecondLayer(TestBaseValidation):
     """a Layer ontop of the BaseValidation class
 
-    alias_mapping does not overlap with the base class
+    alias_mapping does not overlap with the core class
     """
     first_function = function_1
     alias_mapping = {"bar": ["brr"], "foobar": ["far"]}
@@ -83,7 +83,7 @@ def test_second_layer_works():
 
 
 def test_run_summary_on_second_layer():
-    """a second-level base validation class can run a Summary and output correctly
+    """a second-level core validation class can run a Summary and output correctly
     """
     t_bv = TestSecondLayer()
     t_df = example_two_df()

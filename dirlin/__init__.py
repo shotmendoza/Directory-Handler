@@ -2,12 +2,28 @@
 
 __version__ = "0.4.0"
 
-from .src.base.folder import (
-    Folder,
-    Document,
-    Directory,
-    Path
+from dirlin.core.api import (
+    DirlinFormatter,  # formatting functions
+    Document,  # special dataframe wrapper
+    TqdmLoggingHandler  # logger
 )
 
-from .src.base.validation import BaseValidation
-from .src.base.util import DirlinFormatter
+from dirlin.folder import (
+    Folder,  # directory handling
+    Directory,  # pre-made Folder manager
+    Path  # pathlib.Path
+)
+
+from dirlin.validation import (
+    BaseValidation  # used for Validation pipeline
+)
+
+__all__ = [
+    "DirlinFormatter",
+    "Document",
+    "TqdmLoggingHandler",
+    "Folder",
+    "Directory",
+    "Path",
+    "BaseValidation",
+]

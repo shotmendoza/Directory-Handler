@@ -9,7 +9,7 @@ from typing import Any, Callable, Literal
 import pandas as pd
 from tqdm import tqdm
 
-from dirlin.src.base.util import DirlinFormatter, TqdmLoggingHandler
+from dirlin.core.util import DirlinFormatter, TqdmLoggingHandler
 
 
 @dataclasses.dataclass
@@ -45,7 +45,7 @@ class _BaseValidationVerifier:
             params_in_class: dict,
             alias_mapping: dict,
     ):
-        """used for running verification on the base class to ensure that the formatting
+        """used for running verification on the core class to ensure that the formatting
         and organization of the dataframe is correct, and made in a way that the BaseValidation
         object can handle
 
@@ -192,7 +192,7 @@ class BaseValidation:
 
     ...
 
-    The class should be inherited by a base set of classes `MyValidationSet(BaseValidation)`, where
+    The class should be inherited by a core set of classes `MyValidationSet(BaseValidation)`, where
     the `MyValidationSet` has defined checks as we will go over below. You could then layer these checks by
     inheriting the previous class SecondLayerValidation(MyValidationSet) with its own set of checks.
 
@@ -226,7 +226,7 @@ class BaseValidation:
     """
 
     # 2025.05.29: we're going to add logging capabilities to the validation pipeline
-    _logger = logging.getLogger("dirlin.base.validation")
+    _logger = logging.getLogger("dirlin.core.validation")
     """used for logging to the console"""
     _logger.setLevel(logging.INFO)
     tqdm_logger = TqdmLoggingHandler()  # logging to stay in line with tqdm
