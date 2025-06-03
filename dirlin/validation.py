@@ -205,6 +205,17 @@ class BaseValidation:
 
     We could even treat the alias_mapping as a dictionary,
     defining it as `alias_mapping[price] = [Total Price,]` and repeating for each parameter we want to define.
+
+    ...
+
+    Essentially, the inheriting class will have a set of functions (returns a pd.Series) it wants to run,
+    this class will compile the returned pd.Series from the defined functions, and create summaries and
+    dataframes based on the boolean value of the results.
+
+    This object will infer the arguments based on the column names / alias_mapping, in order to get
+    the results from the functions.
+    ...
+
     """
 
     _validator: _BaseValidationVerifier = _BaseValidationVerifier
@@ -389,7 +400,13 @@ class BaseValidation:
                         function_docs[function_name],
                     )
                 case _:
-                    result = cls._process_function_as_scalar_function(function, function_name, df, param_args_list)
+                    result = cls._process_function_as_scalar_function(
+                        function,
+                        function_name,
+                        df,
+                        param_args_list,
+                        function_docs[function_name],
+                    )
             temp = {r.parameters_used: r for r in result}
             results = results | temp  # todo 2025.05.05 thinking this needs to be the ResultsWrapper to make API clear
             pbar.update()
