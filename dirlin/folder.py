@@ -189,9 +189,15 @@ class Folder:
         """
 
         # [Part 0]: the happy path using the cached version
-        cached_previously = self._cached_get_all_files is not None
-        same_filename_pattern = filename_pattern == self._cached_get_all_files[0]
-        if use_cached is True and cached_previously and same_filename_pattern:
+        try:
+            # 2025.06.07 caused an error saying None is unscripable, so we can assume if this mask works
+            # that self._cached_get_all_files is not None
+            cached_previously_and_same_filename_pattern = filename_pattern == self._cached_get_all_files[0]
+        except TypeError as te:
+            print(f"Function never ran previously: {te}")
+            cached_previously_and_same_filename_pattern = False
+
+        if use_cached is True and cached_previously_and_same_filename_pattern:
             return self._cached_get_all_files[1]
         # ===note===: below will only run if the use_cached function is False or this function was never used.
 

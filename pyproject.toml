@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "Dirlin"
-version = "0.4.0"
+version = "0.4.2"
 description = "Handy functions for local files"
 authors = ["mendozasho"]
 readme = "README.md"
