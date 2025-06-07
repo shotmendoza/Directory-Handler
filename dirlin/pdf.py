@@ -45,6 +45,7 @@ class _PDFParseMixin(DirlinFormatter):
         # second check in case they want to only skip it on the PDF level
         if skip_first_row == "pdf":
             found_tables = found_tables[1:]
+        print(found_tables)
         return found_tables
 
 
@@ -108,12 +109,12 @@ class PDFHandler(_PDFParseMixin):
             except TypeError as te:
                 # the function in the try block will raise a type error if None comes in as the name
                 # similar to attribute error, this happens when the PDF gets parsed as an empty table
-                print(f"Table unable to be pulled from PDF ({file_path.stem}): {te}")
+                print(f"Table unable to be pulled from PDF ({file_path.stem}) (TE): {te}")
                 return pd.DataFrame()
             except AttributeError as ae:
                 # This happens when the PDF table that gets parsed is empty.
                 # I think we're going to return an empty DataFrame so columns don't get affected.
-                print(f"Table unable to be pulled from PDF ({file_path.stem}): {ae}")
+                print(f"Table unable to be pulled from PDF ({file_path.stem}) (AE): {ae}")
                 return pd.DataFrame()
         df = pd.DataFrame(records, columns=field_names)
         df = cls.clean_table(df, remove_keyword_records=remove_repeated_keywords)
