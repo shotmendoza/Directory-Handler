@@ -18,6 +18,10 @@ from dirlin.validation import (
     BaseValidation  # used for Validation pipeline
 )
 
+from dirlin.pdf import (
+    PDFHandler  # used for handling PDF and parsing PDFs
+)
+
 __all__ = [
     "DirlinFormatter",
     "Document",

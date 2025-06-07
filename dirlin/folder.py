@@ -14,6 +14,7 @@ import pandas.errors
 import chardet
 from tqdm import tqdm
 
+from dirlin.pdf import PDFHandler
 from dirlin.core.document import Document
 from dirlin.core.util import DirlinFormatter, TqdmLoggingHandler
 
@@ -118,8 +119,8 @@ class Folder:
         """used for parsing and formatting the user args"""
 
         # [2.2] cache utility property for storing the results of get_all_files
-        self._cached_get_all_files: list[Path] | None = None
-        """placeholder for storing the most recently run get_all_files results"""
+        self._cached_get_all_files: (str, list[Path]) | None = None
+        """placeholder for storing the most recently run get_all_files results. (filename_pattern, list[Path])"""
 
         # [2.3] Logging utility class and setting up logging
         self.logger = logging.getLogger("dirlin.core.folder")
@@ -171,24 +172,27 @@ class Folder:
             with_asterisks: bool = True,
             recurse: bool = False,
             days: int | None = None,
-            use_cached: bool = False,
+            use_cached: bool = True,
     ) -> list[Path]:
-        """function for finding all files that follow naming conventions.
+        """function for finding all files that follow certain naming conventions.
         Will search a folder for the filename and return all Paths that match (i.e. list[.xlsx, .xlsx])
 
-        Used in _find_recent_files() and find_and_combine()
+        Used in _find_recent_files(), find_and_combine()
 
         :param filename_pattern: the naming convention of the file, will look in the specified directory
         :param days: looks back past x number of days. If looking in 12/31, then days=5 would look back to 12/26 files
         :param with_asterisks: defaults to True, adds the asterisks at the end of the filename_pattern arg.
         :param recurse: whether to recurse through sub-folders
-        :param use_cached: whether to use cached results or not. Speeds up repetitive operations.
+        :param use_cached: whether to use cached results or not. Speeds up repetitive operations. Make sure to cache
+        only if the instance wants to look into the same filename pattern.
         :return: Path object that meets the parameters
         """
 
         # [Part 0]: the happy path using the cached version
-        if use_cached is True and self._cached_get_all_files is not None:
-            return self._cached_get_all_files
+        cached_previously = self._cached_get_all_files is not None
+        same_filename_pattern = filename_pattern == self._cached_get_all_files[0]
+        if use_cached is True and cached_previously and same_filename_pattern:
+            return self._cached_get_all_files[1]
         # ===note===: below will only run if the use_cached function is False or this function was never used.
 
         # [Part 1]: create mapping for the different user input
@@ -218,7 +222,7 @@ class Folder:
         files = sorted(files, key=os.path.getmtime, reverse=True)
 
         # [4.1] the cached values for get_all_files
-        self._cached_get_all_files = files.copy()
+        self._cached_get_all_files = (filename_pattern, files.copy())
         return files
 
     def _find_recent_file(
@@ -250,16 +254,32 @@ class Folder:
             raise FileNotFoundError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
-    def open(self, file_path: str | Path, add_from: bool = False, *args, **kwargs) -> pd.DataFrame:
+    def open(self, file_path: str | Path, add_source: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
-        Currently, reads .xlsx, .xls, .csv, .txt, .json file extensions, and will raise a
+        Currently, reads .xlsx, .xls, .csv, .txt, .json, .pdf file extensions, and will raise a
         KeyError for any other file types.
 
+        ...
+
+        kwargs for Excel Sheets
+            - sheet_name: str which tab to parse
+
+        ...
+
+        kwargs for PDF files
+            - file_path: Path,
+            - field_names: list[str] | None = None,
+            - skip_first_row: Literal['page', 'pdf'] | None = None,
+            - table_settings: dict | None = None,
+            - remove_repeated_keywords: str | None = None,
+
+        ...
+
         :param file_path: path to the file you want to open
-        :param add_from: determines whether to add the `From` (source) field when opening the file
+        :param add_source: determines whether to add the `From` (source) field when opening the file
         :param args: see documentation for pd.DataFrame object
-        :param kwargs: see documentation for pd.DataFrame object
+        :param kwargs: see documentation for pd.DataFrame object / check documentation on this function above
         :return: pd.DataFrame object of the file
         """
         if isinstance(file_path, str):
@@ -271,13 +291,15 @@ class Folder:
         # Valid File Types
         _excel_types = (".xlsx", ".xls", ",xlsb")
         _text_types = (".txt", ".csv")
+        _image_types = (".pdf", )
 
+        # Handling Excel Files
         if file_path.suffix in _excel_types:
             try:
                 if "sheet_name" not in kwargs.keys():
                     kwargs["sheet_name"] = 0
                 df = pd.read_excel(file_path, *args, **kwargs)
-                if add_from is True:
+                if add_source is True:
                     df["From"] = file_path.stem
                 return df
             except ValueError as ve:
@@ -289,10 +311,11 @@ class Folder:
                 self.logger.warning(_msg)
                 return pd.DataFrame()
 
+        # Handling CSV and Text Files
         elif file_path.suffix in _text_types:
             try:
                 df = pd.read_csv(file_path, *args, **kwargs)
-                if add_from is True:
+                if add_source is True:
                     df["From"] = file_path.stem
                 return df
             except pandas.errors.ParserError:
@@ -303,25 +326,34 @@ class Folder:
                 with open(file_path, "rb") as f:
                     file_path_encoding = chardet.detect(f.read())
                     df = pd.read_csv(file_path, encoding=file_path_encoding['encoding'], *args, **kwargs)
-                    if add_from is True:
+                    if add_source is True:
                         df["From"] = file_path.stem
                     return df
             except pd.errors.DtypeWarning as dt_warning:
                 self.logger.warning(f"{dt_warning}: reprocessing with lower_memory arg...")
                 df = pd.read_csv(file_path, low_memory=False, *args, **kwargs)
-                if add_from is True:
+                if add_source is True:
                     df["From"] = file_path.stem
                 return df
+
+        # Handling JSON files
         elif file_path.suffix == ".json":
             df = pd.read_json(file_path, *args, **kwargs)
-            if add_from is True:
+            if add_source is True:
                 df["From"] = file_path.stem
             return df
+
+        # Handling PDFs
+        elif file_path.suffix in _image_types:  # pdf
+            df = PDFHandler.read(file_path, add_source=add_source, *args, **kwargs)
+            return df
+
+        # for the web / Google Sheets
         try:
             url = urlparse(str(file_path))
             if url.netloc == "docs.google.com" and "format=csv" in url.query.split("&"):
                 df = pd.read_csv(file_path, *args, **kwargs)
-                if add_from is True:
+                if add_source is True:
                     df["From"] = file_path.stem
                 return df
         except HTTPError as e:

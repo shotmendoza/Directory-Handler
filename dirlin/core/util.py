@@ -1,4 +1,5 @@
 import logging
+import re
 
 import pandas as pd
 from tqdm import tqdm
@@ -8,16 +9,41 @@ class DirlinFormatter:
     """utility object used for string formatting and series formatting
     """
     @classmethod
-    def convert_string_to_python_readable(cls, name: str) -> str:
+    def convert_string_to_python_readable(
+            cls,
+            name: str,
+            convert_hashtag: bool = False,
+    ) -> str:
         """function for cleaning a column name. Can add onto this to cover more edge cases in the future.
 
         The function will allow you to transform a standard column `California Taxes` to a python
         usable format of `california_taxes`
 
         :param name: the column name or the string we want to format to make it Python friendly
+        :param convert_hashtag: whether to convert `#` to "number". Will append _ and switch to suffix or prefix
+        based on the position.
         :return: a cleaned column name
         """
-        name = name.strip("-").lower().replace(" ", "_")
+        if not isinstance(name, str):
+            raise TypeError(f"Name must be a string. Got {type(name)}")
+
+        # ===NOTE===
+        # idea is that sometimes when you remove certain symbols, you end up with duplicate column names
+        # to prevent this with `#` (member vs member#) we added this functionality
+        if convert_hashtag is True:
+            if name.startswith('#'):
+                name = name[1:] + '#'  # move the hashtag to the end
+            # checks if there's a `#` not at the end
+            # replaces it with `_` and add the `#` at the end
+            if bool(re.match(r'#(?=.)', name)):
+                name = re.sub(r'#(?=.)', '_', name) + '#'
+            # finally, convert the # into the word `number`
+            name = name.replace('#', '_number')
+
+        # Basic formatting into a computer readable format
+        name = re.sub(r'[^\w\s\n_]', '', name)  # remove whitespace, newline in beginning
+        name = re.sub(r'[.-]', '', name).strip()  # remove #, (.) or - and strip extra lines
+        name = re.sub(r'\s', '_', name).lower()  # replaces spaces with "_" and lowers capitals
         return name
 
     # todo should be convert string to number, with int or float as the param
@@ -169,6 +195,51 @@ class DirlinFormatter:
         :param zip_field: the field with the Zip Code values
         """
         return zip_field.astype(str).str.extract('(\d+)', expand=False).str.zfill(5)
+
+    @classmethod
+    def clean_table(
+            cls,
+            df: pd.DataFrame,
+            remove_duplicated_records: bool = True,
+            remove_records_with_all_null: bool = True,
+            remove_keyword_records: str | None = None,
+    ) -> pd.DataFrame:
+        """formats the pulled table with user options on how they want to clean
+        the data based on some of the data we have pulled so far. Usually works with
+        PDFs or webscraping of tables. We use this for standard cleaning.
+
+        :param df: the dataframe we extracted from a PDF that we want to clean and
+        wrangle
+
+        :param remove_records_with_all_null: if every element in a row has a null
+        value, remove it from the report
+
+        :param remove_duplicated_records: removes any records that have the same duplicated
+        column values. Useful when the headers repeat among the pages.
+
+        :param remove_keyword_records: if a value is given, will remove records with
+        that keyword in the row. Make sure to only use this on repeated keywords.
+
+        """
+        # Remove the duplicated values. These are usually repeated header names
+        if remove_duplicated_records:
+            mask_all_records_duplicated = ~df.duplicated(keep=False)
+            df = df[mask_all_records_duplicated]
+
+        # remove rows with all null values
+        if remove_records_with_all_null:
+            df = df.replace("", None).dropna(how='all')
+
+        # removing the repeated keyword records
+        if remove_keyword_records is not None:
+            has_keyword = df.applymap(
+                lambda x: remove_keyword_records.lower() in str(x).lower()
+                if pd.notnull(x) else False
+            )
+            # if any of the columns have the kw, we want them to be True
+            rows_with_keyword = has_keyword.any(axis=1)
+            df = df[~rows_with_keyword]
+        return df
 
 
 class TqdmLoggingHandler(logging.Handler):
