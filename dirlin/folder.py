@@ -260,6 +260,49 @@ class Folder:
             raise FileNotFoundError(
                 f"No reports found in '{self.path.parent.name}/{self.path.name}' directory in the past {days} days.")
 
+    def _combine_in_order(self, files: list[Path], *args, **kwargs) -> list[pd.DataFrame]:
+        results = []
+        with tqdm(total=len(files), desc="Combining PDF Files", position=0) as pbar:
+            for file in files:
+                pbar.set_description(f"Adding: {file}")
+                try:
+                    temp_df = self.open(file, *args, **kwargs)
+                except Exception as e:
+                    raise e
+                if temp_df is None:
+                    temp_df = pd.DataFrame()
+                results.append(temp_df)
+                pbar.update()
+            pbar.set_description(f"Combining Excel files completed...")
+        return results
+
+    def _combine_in_parallel(self, files: list[Path], *args, **kwargs) -> list[pd.DataFrame]:
+        # [3.2] Loop in Parallel
+        results = []
+        with ThreadPoolExecutor() as executor:  # for running in parallel
+            futures = {
+                executor.submit(self.open, file, True, *args, **kwargs): file
+                for file in files if not file.is_dir()
+            }
+            pbar = tqdm(total=len(futures), desc="Combining Excel Files", position=0)
+
+            for future in as_completed(futures):
+                try:
+                    # [3.2.1] Adding filepath to progress bar
+                    file_path = futures[future]
+                    pbar.set_description(f"Adding: {file_path}")
+
+                    # [3.2.2] Adding dataframe to the concat list
+                    df = future.result()
+                    results.append(df)
+
+                    # [3.2.3] Updating the progress bar
+                    pbar.update()
+                except Exception as e:
+                    raise e
+            pbar.set_description(f"Combining Excel files completed...")
+        return results
+
     def open(self, file_path: str | Path, add_source: bool = False, *args, **kwargs) -> pd.DataFrame:
         """
         Opens a string or pathlib.Path object into a pandas.DataFrame object.
@@ -508,30 +551,14 @@ class Folder:
                     raise ValueError(f"The value of limit must be a positive integer. Got ({limit}).")
 
         # [Part 3] handling the combining of files
-        # [3.2] Loop in Parallel
-        results = []
-        with ThreadPoolExecutor() as executor:  # for running in parallel
-            futures = {
-                executor.submit(self.open, file, True, *args, **kwargs): file
-                for file in files if not file.is_dir()
-            }
-            pbar = tqdm(total=len(futures), desc="Combining Excel Files", position=0)
 
-            for future in as_completed(futures):
-                try:
-                    # [3.2.1] Adding filepath to progress bar
-                    file_path = futures[future]
-                    pbar.set_description(f"Adding: {file_path}")
-
-                    # [3.2.2] Adding dataframe to the concat list
-                    df = future.result()
-                    results.append(df)
-
-                    # [3.2.3] Updating the progress bar
-                    pbar.update()
-                except Exception as e:
-                    raise e
-            pbar.set_description(f"Combining Excel files completed...")
+        # 2025.06.07 notes that PDFs aren't good running in parallel, so we'll check
+        if str(files[0].suffix) == ".pdf":
+            print(f"PDF, running non-parallel")
+            results = self._combine_in_order(files, *args, **kwargs)
+        else:
+            # [3.2] Loop in Parallel (Happy Path)
+            results = self._combine_in_parallel(files, *args, **kwargs)
 
         # [Part 4] combine and move from to the front
         df = pd.concat(results)

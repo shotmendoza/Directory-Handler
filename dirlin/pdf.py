@@ -16,6 +16,7 @@ class _PDFParseMixin(DirlinFormatter):
             file_path: Path,
             skip_first_row: Literal['page', 'pdf'] | None = None,
             table_settings: dict | None = None,
+            debug_mode: bool = False,
     ) -> list[list]:
         """handles the table extraction logic for a PDF. Will attempt to parse a PDF
         with the easiest way first.
@@ -26,8 +27,14 @@ class _PDFParseMixin(DirlinFormatter):
         with pdfplumber.open(file_path) as pdf:
             found_tables = []
             errored_pages = []  # list for keeping any pages that didn't pull correctly
-            for page in pdf.pages:
+            for idx, page in enumerate(pdf.pages):
                 y = page.extract_text()  # check to see if we were able to handle this PDF
+                if y == "" and debug_mode is True:
+                    debug_path = file_path.parent / f"debug_table{idx}.png"
+                    table_image = page.to_image().debug_tablefinder()  # Visualize tables
+                    table_image.save(debug_path)
+
+                    # todo running find_and_combine on pdfplumber is not thread safe so we'll need another fn to handle
                 temp_tbl = page.extract_table(table_settings)  # gives me a list of records I can parse through
 
                 # first check, we're checking again for pdf level once all tables are found
