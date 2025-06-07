@@ -535,7 +535,16 @@ class Folder:
 
         # [Part 4] combine and move from to the front
         df = pd.concat(results)
-        df.insert(0, "From", df.pop("From"))
+        if len(df) == 0:
+            return pd.DataFrame()  # return empty dataframe if everything was empty
+
+        try:
+            df.insert(0, "From", df.pop("From"))
+        except KeyError:
+            # likely from using Source instead
+            df.insert(0, "Source", df.pop("Source"))
+        except Exception as e:
+            raise e
         return df
 
     def index_files(
