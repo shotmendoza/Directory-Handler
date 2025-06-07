@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "Dirlin"
-version = "0.3.12"
+version = "0.4.0"
 description = "Handy functions for local files"
 authors = ["mendozasho"]
 readme = "README.md"
@@ -17,6 +17,7 @@ chardet = "5.2.0"
 numpy = "2.0.0"
 tqdm = "4.67.1"
 pyxlsb="1.0.10"
+pdfplumber = "0.11.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.3.5"
