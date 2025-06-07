@@ -11,7 +11,7 @@ from dirlin.core.api import (
 from dirlin.folder import (
     Folder,  # directory handling
     Directory,  # pre-made Folder manager
-    Path  # pathlib.Path
+    Path,  # pathlib.Path,
 )
 
 from dirlin.validation import (
@@ -22,6 +22,10 @@ from dirlin.pdf import (
     PDFHandler  # used for handling PDF and parsing PDFs
 )
 
+import pandas  # using the Pandas library
+import numpy  # using the numpy lib
+
+
 __all__ = [
     "DirlinFormatter",
     "Document",
@@ -30,4 +34,6 @@ __all__ = [
     "Directory",
     "Path",
     "BaseValidation",
+    "pandas",
+    "numpy"
 ]
