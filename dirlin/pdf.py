@@ -109,7 +109,9 @@ class PDFHandler(_PDFParseMixin):
             except TypeError as te:
                 # the function in the try block will raise a type error if None comes in as the name
                 # similar to attribute error, this happens when the PDF gets parsed as an empty table
-                print(f"Table unable to be pulled from PDF ({file_path.stem}) (TE): {te}")
+                print(f"Table unable to be pulled from PDF ({file_path.stem}) (TE)")
+                print(f"Hint: try using `skip_the_first_row` argument (`page`, `pdf`).")
+                print(f"{te}")
                 return pd.DataFrame()
             except AttributeError as ae:
                 # This happens when the PDF table that gets parsed is empty.

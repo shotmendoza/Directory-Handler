@@ -569,7 +569,8 @@ class Folder:
             df.insert(0, "From", df.pop("From"))
         except KeyError:
             # likely from using Source instead
-            df.insert(0, "Source", df.pop("Source"))
+            if "source" in df.columns:
+                df.insert(0, "source", df.pop("source"))
         except Exception as e:
             raise e
         return df
