@@ -45,7 +45,6 @@ class _PDFParseMixin(DirlinFormatter):
         # second check in case they want to only skip it on the PDF level
         if skip_first_row == "pdf":
             found_tables = found_tables[1:]
-        print(found_tables)
         return found_tables
 
 
