@@ -96,7 +96,12 @@ class PDFHandler(_PDFParseMixin):
 
         """
         # ===Part 1=== Parse the PDF
-        records = cls._handle_table_parsing(file_path, skip_first_row, table_settings)
+        records = cls._handle_table_parsing(
+            file_path,
+            skip_first_row,
+            table_settings,
+            debug_mode
+        )
 
         # ===Part 2=== Format the Dataframe
         # If Field Name is None, we automatically try to parse it
