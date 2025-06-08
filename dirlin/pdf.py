@@ -60,6 +60,7 @@ class PDFHandler(_PDFParseMixin):
             table_settings: dict | None = None,
             remove_repeated_keywords: str | None = None,
             add_source: bool = True,
+            debug_mode: bool = False,
     ):
         """converts a PDF file into a Dataframe
 
@@ -91,6 +92,7 @@ class PDFHandler(_PDFParseMixin):
         :param remove_repeated_keywords: determines whether to remove a row based on a keyword
         :param skip_first_row: determines whether to skip the first row
         :param add_source: determines whether to add the `source` field when opening the file
+        :param debug_mode: enables debugging mode
 
         """
         # ===Part 1=== Parse the PDF
