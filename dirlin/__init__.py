@@ -19,7 +19,7 @@ from dirlin.validation import (
 )
 
 from dirlin.pdf import (
-    PDFHandler  # used for handling PDF and parsing PDFs
+    PDFFile  # used for handling PDF and parsing PDFs
 )
 
 import pandas  # using the Pandas library

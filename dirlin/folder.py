@@ -14,7 +14,7 @@ import pandas.errors
 import chardet
 from tqdm import tqdm
 
-from dirlin.pdf import PDFHandler
+from dirlin.pdf import PDFFile
 from dirlin.core.document import Document
 from dirlin.core.util import DirlinFormatter, TqdmLoggingHandler
 
@@ -394,7 +394,8 @@ class Folder:
 
         # Handling PDFs
         elif file_path.suffix in _image_types:  # pdf
-            df = PDFHandler.read(file_path, add_source=add_source, *args, **kwargs)
+            pdf = PDFFile(file_path)
+            df = pdf.to_dataframe(*args, **kwargs)
             return df
 
         # for the web / Google Sheets
