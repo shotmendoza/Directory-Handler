@@ -92,7 +92,7 @@ class PDFFile:
 
         # 2025.06.08 going to push a problem into the future
         # we're going to assume that if we use the pyPDF we need to rotate the PDF
-        if pdf_info.check_rotation_error() is True:
+        if pdf_info.errors() is True:
             error_pages = pdf_info.from_pypdf()
             path = helper.rotate_pdf(error_pages)
 
@@ -171,7 +171,9 @@ class PDFStore:
     # flags to check for proper debug action
     height: int | float | None = None
     width: int | float | None = None
-    errors: bool = False
+    extraction_failed: bool | None = None
+
+    # High Level error properties
     errors_log: list[str] | None = None
 
     # === END OF PROPERTIES ===
@@ -223,6 +225,20 @@ class PDFStore:
             self.pages_objects = pages
         return pages
 
+    def errors(self) -> bool:
+        check_error = [
+            self.check_rotation_error(),
+            self.check_nothing_extracted()
+        ]
+        return any(check_error)
+
+    def check_nothing_extracted(self):
+        """checks to see if we were able to extract any records
+        """
+        if self.extraction_failed is None:
+            self._extract_data_from_pdf_plumber()
+        return self.extraction_failed
+
     def check_rotation_error(self) -> bool:
         """checks for rotation issues
         """
@@ -267,14 +283,18 @@ class PDFStore:
         with pdfplumber.open(self.pdf_path) as pdf:
             pages = [page for page in pdf.pages]
 
-            # For checks inside of this class
+            # Rotation Check Variables
             width = sum(page.width for page in pages) / len(pages)
             height = sum(page.height for page in pages) / len(pages)
             self.width, self.height = width, height
 
+            # Text Extraction Variables
+            extracted_text = [page.extract_text() for page in pages]
+            self.extraction_failed = any(text == "" for text in extracted_text)
+
     def extract_table_from_pdf_plumber(
             self,
-            path: Path | io.BytesIO,
+            path: Path | io.BytesIO | None = None,
             table_settings: dict | None = None,
             skip_first_per_page: bool = False,
             debug: bool = False
@@ -284,6 +304,9 @@ class PDFStore:
         of this function takes a page param, which makes the looking easier here.
 
         """
+        if path is None:
+            path = self.pdf_path
+
         with pdfplumber.open(path) as pdf:
             tables = [
                 self._extract_table_with_pdf_plumber(page, table_settings, skip_first_per_page)
