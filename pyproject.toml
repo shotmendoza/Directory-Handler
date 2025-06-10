@@ -2,11 +2,11 @@
 name = "Dirlin"
 version = "0.4.2"
 description = "Handy functions for local files"
-authors = ["mendozasho"]
+authors = [{name = "mendozasho"}]
 readme = "README.md"
+requires-python = ">=3.11"
 
 packages = [{include = "dirlin"}]
-requires-python = ">=3.11"
 
 dependencies = [
     "openpyxl",
