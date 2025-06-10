@@ -1,4 +1,4 @@
-[tool.poetry]
+[project]
 name = "Dirlin"
 version = "0.4.2"
 description = "Handy functions for local files"
@@ -6,22 +6,24 @@ authors = ["mendozasho"]
 readme = "README.md"
 
 packages = [{include = "dirlin"}]
+requires-python = ">=3.11"
 
-[tool.poetry.dependencies]
-python = "^3.11"
-openpyxl = "*"
-xlrd = "2.0.1"
-pandas = "2.0.2"
-chardet = "5.2.0"
-numpy = "<2.0.0"
-tqdm = "~4.67.1"
-pyxlsb = "1.0.10"
-pdfplumber = "0.11.6"
+dependencies = [
+    "openpyxl",
+    "xlrd==2.0.1",
+    "pandas==2.0.2",
+    "chardet==5.2.0",
+    "numpy<2.0.0",
+    "tqdm~=4.67.1",
+    "pyxlsb==1.0.10",
+    "pdfplumber==0.11.6",
+    "pypdf==5.6.0"
+]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
 setuptools = "^80"
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+#[build-system]
+#requires = ["poetry-core"]
+#build-backend = "poetry.core.masonry.api"

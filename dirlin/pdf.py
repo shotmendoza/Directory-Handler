@@ -48,6 +48,7 @@ class PDFFile:
             remove_duplicated_records: bool | None = None,
             remove_records_with_all_null: bool | None = None,
             add_source: bool = True,
+            debug: bool = False,
             *args,
             **kwargs
     ):
@@ -80,6 +81,7 @@ class PDFFile:
         :param remove_repeated_keywords: determines whether to remove a row based on a keyword
         :param skip_first_per_pdf:
         :param skip_first_per_page:
+        :param debug:
         :param remove_duplicated_records: determines whether to remove duplicated records
         :param remove_records_with_all_null: determines whether to remove records with null values
         :param add_source: determines whether to add the `source` field when opening the file
@@ -107,7 +109,8 @@ class PDFFile:
             path=path,
             table_settings=table_settings,
             skip_first_per_page=skip_first_per_page,
-            inplace=True
+            inplace=True,
+            debug=debug
         )
 
         # Bytes IO NEEDS TO BE CLOSED
@@ -174,6 +177,7 @@ class PDFStore:
     extraction_failed: bool | None = None
 
     # High Level error properties
+    iter: int = 1  # used for debug table, the number of times the fn was run
     errors_log: list[str] | None = None
 
     # === END OF PROPERTIES ===
@@ -183,7 +187,8 @@ class PDFStore:
             path: Path | io.BytesIO | None = None,
             table_settings: dict | None = None,
             skip_first_per_page: bool = False,
-            inplace: bool = False
+            inplace: bool = False,
+            debug: bool = False
     ) -> list[list[Any]]:
         """uses pdf plumber to get the table records after table extraction
 
@@ -192,6 +197,7 @@ class PDFStore:
 
         :param path: Path
         :param table_settings: dict | None
+        :param debug:
         :param skip_first_per_page: determines whether to skip the first row on page level
         :param inplace: will save the list of pages under self.pages
         """
@@ -204,7 +210,7 @@ class PDFStore:
         if not isinstance(path, Path) and not isinstance(path, io.BytesIO):
             raise TypeError(f'path must be Path or io.BytesIO. Got {type(path)}.')
 
-        tbl = self.extract_table_from_pdf_plumber(path, table_settings, skip_first_per_page)
+        tbl = self.extract_table_from_pdf_plumber(path, table_settings, skip_first_per_page, debug)
 
         if inplace is True:
             self.tables = tbl
@@ -226,6 +232,10 @@ class PDFStore:
         return pages
 
     def errors(self) -> bool:
+        # Handling self.pages not being initialized
+        if self.height is None or self.width is None or self.extraction_failed is None:
+            self._extract_data_from_pdf_plumber()
+
         check_error = [
             self.check_rotation_error(),
             self.check_nothing_extracted()
@@ -235,17 +245,11 @@ class PDFStore:
     def check_nothing_extracted(self):
         """checks to see if we were able to extract any records
         """
-        if self.extraction_failed is None:
-            self._extract_data_from_pdf_plumber()
         return self.extraction_failed
 
     def check_rotation_error(self) -> bool:
         """checks for rotation issues
         """
-        # Handling self.pages not being initialized
-        if self.height is None or self.width is None:
-            self._extract_data_from_pdf_plumber()
-
         height = self.height * .75
         width = self.width
 
@@ -322,15 +326,18 @@ class PDFStore:
         so that we can refer to this later.
 
         """
+        # creating the filepath from given filepath
+        parent_path = self.pdf_path.parent
+        filepath = self.pdf_path.stem
+        curr_iter = self.iter
+
         # creating the table image from given Page instance
         with pdfplumber.open(self.pdf_path) as pdf:
             for page in pdf.pages:
-                page.to_image().debug_tablefinder()
-
-            # creating the filepath from given filepath
-            parent_path = self.pdf_path.parent
-            filepath = self.pdf_path.stem
-            self.table_image_path = parent_path / f"{filepath}_bound_boxes_{page.page_number}.png"
+                image = page.to_image().debug_tablefinder()
+                filename = parent_path / f"Curr_{curr_iter}_{filepath}_bound_boxes_{page.page_number}.png"
+                image.save(filename)
+        self.iter += 1
 
 
 class _PyPdfFormatter:
@@ -348,9 +355,13 @@ class _PyPdfFormatter:
         """
         # Happy Path with one PageObject
         if isinstance(pages, PageObject):
-            pages.rotate(degree)
-            return cls.write_pdf_as_buffer(pages)
-        pages = [page.rotate(degree) for page in pages]
+            pages = list(pages)
+
+        for page in pages:
+            page.rotate(degree)
+
+            # TODO use curr state of CHATGPT to actually rotate the page
+
         return cls.write_pdf_as_buffer(pages)
 
     @classmethod
