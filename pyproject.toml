@@ -6,8 +6,6 @@ authors = [{name = "mendozasho"}]
 readme = "README.md"
 requires-python = ">=3.11"
 
-packages = [{include = "dirlin"}]
-
 dependencies = [
     "openpyxl",
     "xlrd==2.0.1",
