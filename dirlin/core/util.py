@@ -46,6 +46,22 @@ class DirlinFormatter:
         name = re.sub(r'\s', '_', name).lower()  # replaces spaces with "_" and lowers capitals
         return name
 
+    @classmethod
+    def convert_string_to_float(
+            cls,
+            field: pd.Series
+    ) -> pd.Series:
+        """Usually used for a dollar balance to float conversion
+        """
+        clean_s = field.str.replace(r'[^$\s\n]', '', regex=True)
+        clean_s = clean_s.str.replace(r',', '', regex=True)
+
+        try:
+            clean_s = clean_s.fillna("0").astype(float)
+        except Exception as e:
+            raise e
+        return clean_s
+
     # todo should be convert string to number, with int or float as the param
     @classmethod
     def convert_string_to_integer(
