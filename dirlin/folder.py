@@ -338,7 +338,7 @@ class Folder:
 
         # Valid File Types
         _excel_types = (".xlsx", ".xls", ",xlsb")
-        _text_types = (".txt", ".csv")
+        _text_types = (".txt", ".csv", ".bz2", ".tsv")
         _image_types = (".pdf", )
 
         # Handling Excel Files
