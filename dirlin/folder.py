@@ -193,8 +193,7 @@ class Folder:
             # 2025.06.07 caused an error saying None is unscripable, so we can assume if this mask works
             # that self._cached_get_all_files is not None
             cached_previously_and_same_filename_pattern = filename_pattern == self._cached_get_all_files[0]
-        except TypeError as te:
-            print(f"Function never ran previously: {te}")
+        except TypeError:
             cached_previously_and_same_filename_pattern = False
 
         if use_cached is True and cached_previously_and_same_filename_pattern:

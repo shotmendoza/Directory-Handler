@@ -355,12 +355,20 @@ class _PyPdfFormatter:
         """
         # Happy Path with one PageObject
         if isinstance(pages, PageObject):
-            pages = list(pages)
+            pages = [pages]
+
+        # Create transformation matrix
+        if degree == 90:
+            matrix = (0, 1, -1, 0, pages[0].mediabox.height, 0)
+        elif degree == 180:
+            matrix = (-1, 0, 0, -1, pages[0].mediabox.width, pages[0].mediabox.height)
+        elif degree == 270:
+            matrix = (0, -1, 1, 0, 0, pages[0].mediabox.width)
+        else:
+            raise ValueError("Rotation must be 0, 90, 180, or 270 degrees.")
 
         for page in pages:
-            page.rotate(degree)
-
-            # TODO use curr state of CHATGPT to actually rotate the page
+            page.add_transformation(matrix)
 
         return cls.write_pdf_as_buffer(pages)
 
@@ -374,10 +382,10 @@ class _PyPdfFormatter:
         for page in pages:
             pdf.add_page(page)
 
-        path = io.BytesIO()
-        pdf.write(path)
-        path.seek(0)
-        return path
+        buffer = io.BytesIO()
+        pdf.write(buffer)
+        buffer.seek(0)
+        return buffer
 
     @classmethod
     def get_field_names(cls, records: list[list], field_names: list[str] | None = None) -> list[str]:
