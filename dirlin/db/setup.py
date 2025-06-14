@@ -8,19 +8,7 @@ from sqlalchemy import Engine, create_engine
 from dirlin.db.utils import database_exists
 
 
-class Base(DeclarativeBase):
-    """used for creating different SqlAlchemy tables. Tables will usually inherit from this class.
-
-    Example:
-        class SampleTable(Base):
-            __tablename__ = "bank_statements"
-            id: Mapped[int] = mapped_column(primary_key=True)
-            transaction_id: Mapped[str] = mapped_column(unique=True)
-    """
-    ...
-
-
-@dataclass
+@dataclass(frozen=True)
 class SqlSetup(ABC):
     """used for metadata and setting up tables and databases in the app
 
@@ -31,16 +19,20 @@ class SqlSetup(ABC):
 
     """
     url: str
-    Base: DeclarativeBase
+    Base: DeclarativeBase | type[DeclarativeBase] | None = None
     engine: Engine | None = None
     session: Session | sessionmaker | None = None
 
     def __post_init__(self):
+        # set the value for engine if the engine value was empty
         if self.engine is None:
-            self.engine = self.generate_engine()
+            engine = self.generate_engine()
+            object.__setattr__(self, 'engine', engine)
 
+        # set the value for session if the session value was empty
         if self.session is None:
-            self.session = self.create_session_factory()
+            session = self.create_session_factory()
+            object.__setattr__(self, 'session', session)
 
     def generate_engine(self) -> Engine:
         """creates an engine based off the init `url` property.
@@ -51,6 +43,28 @@ class SqlSetup(ABC):
         """generates a session factory for the database
         """
         return sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
+
+    def create_base_factory(self) -> type[DeclarativeBase]:
+        """generates a parent of a DeclarativeBase, used for table creation.
+
+        Example:
+            class SampleTable(Base):
+                __tablename__ = "bank_statements"
+                id: Mapped[int] = mapped_column(primary_key=True)
+        """
+        if self.Base is None:
+            class Base(DeclarativeBase):
+                """used for creating different SqlAlchemy tables. Tables will usually inherit from this class.
+
+                Example:
+                    class SampleTable(Base):
+                        __tablename__ = "bank_statements"
+                        id: Mapped[int] = mapped_column(primary_key=True)
+                        transaction_id: Mapped[str] = mapped_column(unique=True)
+                """
+                ...
+            return Base
+        return self.Base
 
     @classmethod
     def _resolve_db_path(cls):
