@@ -15,8 +15,7 @@ import chardet
 from tqdm import tqdm
 
 from dirlin.pdf import PDFFile
-from dirlin.core.document import Document
-from dirlin.core.util import DirlinFormatter, TqdmLoggingHandler
+from dirlin.core.api import Document, DirlinFormatter, TqdmLoggingHandler
 
 
 class Directory:

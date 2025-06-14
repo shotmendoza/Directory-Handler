@@ -16,7 +16,9 @@ dependencies = [
     "pyxlsb==1.0.10",
     "pdfplumber==0.11.6",
     "pypdf==5.6.0",
-    "pypdf2"
+    "pypdf2",
+    "sqlalchemy",
+    "pydantic"
 ]
 
 [tool.poetry.group.dev.dependencies]
