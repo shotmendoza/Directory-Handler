@@ -11,12 +11,6 @@ from pypdf import PdfReader, PdfWriter, PageObject
 
 from dirlin.core.api import DirlinFormatter
 
-# Main outside function
-# paths = list[Path]
-
-# for path in paths:
-#     parse_pdf(path: Path)
-
 # Parse PDF
 # Read with PDF Plumber fn(path: Path) => Page
 # If it fails, read with (1) PyPDF fn(path: Page) then (2) read with PDF Plumber fn(path: Page)
