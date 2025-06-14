@@ -26,25 +26,25 @@ class SqlSetup(ABC):
     def __post_init__(self):
         # set the value for engine if the engine value was empty
         if self.engine is None:
-            engine = self.generate_engine()
+            engine = self._generate_engine()
             object.__setattr__(self, 'engine', engine)
 
         # set the value for session if the session value was empty
         if self.session is None:
-            session = self.create_session_factory()
+            session = self._create_session_factory()
             object.__setattr__(self, 'session', session)
 
-    def generate_engine(self) -> Engine:
+    def _generate_engine(self) -> Engine:
         """creates an engine based off the init `url` property.
         """
         return create_engine(self.url, echo=True)
 
-    def create_session_factory(self):
+    def _create_session_factory(self):
         """generates a session factory for the database
         """
         return sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
 
-    def create_base_factory(self) -> type[DeclarativeBase]:
+    def _create_base_factory(self) -> type[DeclarativeBase]:
         """generates a parent of a DeclarativeBase, used for table creation.
 
         Example:
