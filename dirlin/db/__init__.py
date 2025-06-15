@@ -2,7 +2,6 @@
 # Includes the setup and the DeclarativeBase class
 from .setup import (
     SqlSetup,
-    Base
 )
 
 # Used for querying
