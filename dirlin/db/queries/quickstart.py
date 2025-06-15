@@ -1,8 +1,9 @@
 from pydantic import BaseModel
 from sqlalchemy import select, update
+from sqlalchemy.orm import DeclarativeBase
 
 from dirlin.db.queries.query import Query
-from dirlin.db.setup import Base, SqlSetup
+from dirlin.db.setup import SqlSetup
 
 
 class CreateOrUpdateRecord(Query):
@@ -13,7 +14,7 @@ class CreateOrUpdateRecord(Query):
         """
         self.setup = setup
 
-    def execute(self, table: type[Base], model: BaseModel) -> None:
+    def execute(self, table: type[DeclarativeBase], model: BaseModel) -> None:
         with self.setup.session.begin() as sesh:
             # (!) probably need to check whether the table has transaction_id
             query = sesh.execute(
@@ -39,7 +40,7 @@ class ReadRecordWithTransactionID(Query):
 
     def execute(
             self,
-            table: Base,
+            table: DeclarativeBase,
             model: BaseModel,
             transaction_id: str
     ) -> BaseModel:

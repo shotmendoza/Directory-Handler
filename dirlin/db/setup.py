@@ -44,7 +44,7 @@ class SqlSetup(ABC):
         """
         return sessionmaker(bind=self.engine, autoflush=False, autocommit=False)
 
-    def _create_base_factory(self) -> type[DeclarativeBase]:
+    def create_base_factory(self) -> type[DeclarativeBase]:
         """generates a parent of a DeclarativeBase, used for table creation.
 
         Example:
